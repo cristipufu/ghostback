@@ -96,8 +96,8 @@ cargo build --release --locked
 cargo run --locked --example real_agents_e2e -- target/release/ghostback
 ```
 
-Three Node development tests cover Pi lifecycle/ephemeral selection, OpenCode
-route selection/loading states, and bridge child-process errors, deduplication,
+Four Node development tests cover Pi lifecycle/ephemeral selection, OpenCode
+route selection/loading states, native/script Pi executable layouts, and bridge child-process errors, deduplication,
 ordering, and returning rapidly to a previous conversation. Node is not required
 by the Ghostback executable. Reproduce with `node --test tests/bridges.mjs`.
 

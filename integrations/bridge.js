@@ -1,5 +1,15 @@
 // Runs inside the agent's existing runtime; no shell, transcript, or model access.
 import { spawn } from "node:child_process";
+import { basename } from "node:path";
+
+function piLaunchArgv(executable, argv) {
+  if (["node", "bun", "node.exe", "bun.exe"].includes(basename(executable))) return argv.slice(1);
+  // Native Pi builds can expose their bundled script as a virtual argv entry.
+  const args = argv.slice(1);
+  const entry = args[0];
+  if (entry === executable || entry?.includes("$bunfs/") || entry?.includes("~BUN/")) args.shift();
+  return [executable, ...args];
+}
 
 const config = __GHOSTBACK_CONFIG__;
 
@@ -10,11 +20,12 @@ function reporter(agent) {
   let last = "";
   let sentAt = 0;
   let child;
+  const launch = agent === "pi" ? { launch_argv: piLaunchArgv(process.execPath, process.argv) } : {};
   const active = Boolean(process.env.GHOSTTY_SURFACE_ID || process.env.GHOSTBACK_HOST_KEY);
 
   function send(payload) {
     if (!active || stopped) return;
-    const body = JSON.stringify({ ...payload, owner_pid: process.pid, ...(agent === "pi" ? { launch_argv: process.argv.slice(1) } : {}) });
+    const body = JSON.stringify({ ...payload, owner_pid: process.pid, ...launch });
     if (!running && !pending && body === last && Date.now() - sentAt < 30000) return;
     pending = { body, tick: process.hrtime.bigint().toString() };
     drain();

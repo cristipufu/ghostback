@@ -71,6 +71,16 @@ test("OpenCode follows the selected TUI route, never unrelated server activity",
   bridge.dispose();
 });
 
+test("Pi launch metadata supports script, native, and bundled executable layouts", async () => {
+  const source = await readFile(new URL("../integrations/bridge.js", import.meta.url), "utf8");
+  const code = source.replace("__GHOSTBACK_CONFIG__", "{}") + "\nexport { piLaunchArgv };";
+  const { piLaunchArgv } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+  assert.deepEqual(piLaunchArgv("/bin/node", ["/bin/node", "/lib/pi/cli.js", "--thinking", "low"]), ["/lib/pi/cli.js", "--thinking", "low"]);
+  assert.deepEqual(piLaunchArgv("/bin/pi", ["/bin/pi", "--thinking", "low"]), ["/bin/pi", "--thinking", "low"]);
+  assert.deepEqual(piLaunchArgv("/bin/pi", ["/bin/pi", "/$bunfs/root/pi.js", "--thinking", "low"]), ["/bin/pi", "--thinking", "low"]);
+  assert.deepEqual(piLaunchArgv("/bin/pi", ["/bin/pi", "/bin/pi", "--thinking", "low"]), ["/bin/pi", "--thinking", "low"]);
+});
+
 test("reporter orders observations, deduplicates, and survives failed child launches", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "ghostback-reporter-"));
   const previous = process.env.GHOSTTY_SURFACE_ID;
