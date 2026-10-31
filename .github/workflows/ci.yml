@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-14, macos-15-intel, macos-26, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -27,12 +27,12 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - name: Package and enforce size budget
-        if: runner.os == 'macOS'
+        if: matrix.os == 'macos-26'
         run: |
           sh scripts/package.sh
           for archive in dist/*.tar.gz; do sh scripts/smoke-package.sh "$archive"; done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: runner.os == 'macOS'
+        if: matrix.os == 'macos-26'
         with:
           name: ghostback-macos
           path: dist/*

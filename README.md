@@ -48,9 +48,10 @@ ghostback setup --dry-run
 ghostback setup
 ```
 
-The prebuilt bottle currently targets **Apple Silicon on macOS 26 (Tahoe)**.
-It requires no Rust compiler or separate runtime. Other macOS configurations
-build from source and require Homebrew's build dependencies.
+The current prebuilt bottle covers **Apple Silicon on macOS 26 (Tahoe)**.
+This describes the available download, rather than a macOS 26 requirement in
+Ghostback. Other compatible Macs can build from source using Homebrew's build
+dependencies. A bottle installation requires no Rust compiler or separate runtime.
 
 To build from a checkout instead:
 
@@ -164,7 +165,10 @@ backups, and recovery outcomes. Chat transcripts are not copied into that state.
 Uninstall keeps recovery data and preserves modified or unowned files.
 
 The first native integration is macOS. The domain logic, SQLite storage, and
-state machine are portable; native Linux restoration is not currently supported.
+state machine are portable; native Linux restoration needs a Linux terminal and
+process adapter and is not currently supported. CI checks Apple Silicon on macOS
+14/26, Intel on macOS 15, and the portable core on Linux. Native GUI recovery
+qualification is tracked separately in the verification document.
 
 ## Development
 
