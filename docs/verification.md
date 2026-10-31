@@ -7,11 +7,11 @@ made.
 
 ## Automated checks
 
-- **86 Rust tests pass** across session storage, adapters, installation, and
+- **87 Rust tests pass** across session storage, adapters, installation, and
   lifecycle behavior.
 - Formatting and strict Clippy checks pass for all targets in the checkout,
   including the test and release-tool sources.
-- RustSec `cargo-audit` 0.22.2 scanned the locked dependency graph against 1,395
+- RustSec `cargo-audit` 0.22.2 scanned 69 locked dependencies against 1,395
   advisories with warnings denied: no reported vulnerabilities or warnings.
 - The package contains a standalone native executable, MIT license, README,
   contributor guide, documentation, third-party notices for 42 normal/build
@@ -23,9 +23,13 @@ made.
   PATH; no Python, uv, Node, Cargo, or Rust toolchain is available on that PATH.
   Diagnostics leave absent state untouched.
 
-The repository includes macOS/Linux CI checks, a macOS packaging smoke check,
-and RustSec auditing. Remote CI execution requires pushing this local project
-to a GitHub repository; those remote jobs have not been run here.
+The repository runs macOS/Linux CI checks, a macOS packaging smoke check,
+and RustSec auditing on GitHub. The initial published build passed all jobs;
+subsequent results are available in the [CI workflow](https://github.com/cristipufu/ghostback/actions/workflows/ci.yml).
+
+The dependency refresh uses the latest stable direct releases and refreshes
+compatible transitive packages. A standard SHA-256 known-answer test verifies
+that the `sha2` 0.11 migration preserves existing installer ownership fingerprints.
 
 ## Native integration evidence
 

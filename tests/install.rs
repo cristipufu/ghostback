@@ -20,6 +20,18 @@ fn fixture() -> (TempDir, Options) {
     };
     (root, options)
 }
+
+#[test]
+fn ownership_digest_preserves_standard_sha256_hex_fingerprints() {
+    assert_eq!(
+        install::digest(b""),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        install::digest(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+}
 #[test]
 fn marked_blocks_are_idempotent_and_preserve_surroundings() {
     let input = "export TEST=before\n";

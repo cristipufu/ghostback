@@ -8,12 +8,12 @@ authors = ["cristipufu"]
 
 [dependencies]
 clap = { version = "4.6.7", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-uuid = { version = "1.28.0", features = ["serde"] }
+uuid = { version = "1.29.0", features = ["serde"] }
 libc = "0.2.191"
-sha2 = "0.10.9"
+sha2 = "0.11.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"

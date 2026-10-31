@@ -63,7 +63,16 @@ pub struct Options {
 }
 
 pub fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    Sha256::digest(bytes)
+        .iter()
+        .flat_map(|byte| {
+            [
+                char::from(HEX[(byte >> 4) as usize]),
+                char::from(HEX[(byte & 0x0f) as usize]),
+            ]
+        })
+        .collect()
 }
 fn optional(path: &Path) -> Result<Option<Vec<u8>>> {
     match files::read(path, MAX_BINARY) {
