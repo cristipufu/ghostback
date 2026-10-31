@@ -1,4 +1,5 @@
 //! Transactional installation. Configuration edits are owned and reversible.
+use crate::distribution::{self, Distribution};
 use crate::sessions::shell_quote;
 use crate::{Result, app, files, invalid, process};
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,8 @@ pub struct Manifest {
     pub generation: String,
     pub home: PathBuf,
     pub binary: PathBuf,
+    #[serde(default)]
+    pub distribution: Distribution,
     pub codex_binary: Option<PathBuf>,
     pub files: Vec<InstalledFile>,
 }
@@ -36,7 +39,7 @@ pub struct Manifest {
 struct JournalEntry {
     path: PathBuf,
     backup: Option<PathBuf>,
-    after_digest: String,
+    after_digest: Option<String>,
     #[serde(default)]
     mode: Option<u32>,
 }
@@ -49,7 +52,7 @@ struct Journal {
 struct Edit {
     path: PathBuf,
     before: Option<Vec<u8>>,
-    after: Vec<u8>,
+    after: Option<Vec<u8>>,
     kind: Kind,
     executable: bool,
     mode: Option<u32>,
@@ -293,7 +296,7 @@ fn make_edit(path: PathBuf, after: Vec<u8>, kind: Kind, executable: bool) -> Res
     Ok(Edit {
         before: optional(&path)?,
         path,
-        after,
+        after: Some(after),
         kind,
         executable,
         mode,
@@ -321,7 +324,8 @@ pub fn setup(options: &Options) -> Result<Vec<PathBuf>> {
     }
     let home = &options.home;
     let state = &options.state;
-    let binary = home.join(".local/bin/ghostback");
+    let location = distribution::installation_binary(&options.source, home)?;
+    let binary = location.path;
     let manifest_path = state.join("install.json");
     let _lock = if options.dry_run {
         None
@@ -334,13 +338,9 @@ pub fn setup(options: &Options) -> Result<Vec<PathBuf>> {
     let previous = optional(&manifest_path)?
         .map(|bytes| serde_json::from_slice::<Manifest>(&bytes))
         .transpose()?;
-    if previous
-        .as_ref()
-        .is_some_and(|m| m.home != *home || m.binary != binary)
-    {
+    if previous.as_ref().is_some_and(|m| m.home != *home) {
         return Err(invalid("installation manifest belongs to another home"));
     }
-    let image = files::read(&options.source, MAX_BINARY)?;
     let mut edits = Vec::new();
     let mut own = |path: PathBuf, after: Vec<u8>, executable: bool| -> Result<()> {
         if let Some(current) = optional(&path)? {
@@ -366,7 +366,13 @@ pub fn setup(options: &Options) -> Result<Vec<PathBuf>> {
         )?);
         Ok(())
     };
-    own(binary.clone(), image, true)?;
+    if location.distribution == Distribution::Standalone {
+        own(
+            binary.clone(),
+            files::read(&options.source, MAX_BINARY)?,
+            true,
+        )?;
+    }
     let shim = state.join("shims/codex");
     let codex = app::executable("codex")
         .filter(|p| p != &shim)
@@ -434,11 +440,23 @@ pub fn setup(options: &Options) -> Result<Vec<PathBuf>> {
         ("agy", home.join(".gemini/config/hooks.json")),
     ] {
         let input = text(&path)?;
-        let value = if input.trim().is_empty() {
+        let mut value = if input.trim().is_empty() {
             json!({})
         } else {
             serde_json::from_str(&input)?
         };
+        if let Some(previous) = &previous {
+            for file in &previous.files {
+                if file.path == path
+                    && let Kind::Hook {
+                        agent: old_agent,
+                        command,
+                    } = &file.kind
+                {
+                    value = merge_hook(value, old_agent, command, true)?;
+                }
+            }
+        }
         let command = format!(
             "{} --state-dir {} hook {agent}",
             shell_quote(&binary.to_string_lossy()),
@@ -492,6 +510,7 @@ pub fn setup(options: &Options) -> Result<Vec<PathBuf>> {
         ),
         home: home.clone(),
         binary: binary.clone(),
+        distribution: location.distribution,
         codex_binary: codex,
         files: edits
             .iter()
@@ -501,6 +520,9 @@ pub fn setup(options: &Options) -> Result<Vec<PathBuf>> {
             })
             .collect(),
     };
+    if let Some(previous) = &previous {
+        append_retired_integrations(&mut edits, previous)?;
+    }
     let paths = edits.iter().map(|e| e.path.clone()).collect::<Vec<_>>();
     if options.dry_run {
         return Ok(paths);
@@ -520,6 +542,59 @@ pub fn setup(options: &Options) -> Result<Vec<PathBuf>> {
         )?;
     }
     Ok(paths)
+}
+
+fn append_retired_integrations(edits: &mut Vec<Edit>, previous: &Manifest) -> Result<()> {
+    for file in &previous.files {
+        if edits.iter().any(|e| e.path == file.path) {
+            continue;
+        }
+        let Some(current) = optional(&file.path)? else {
+            continue;
+        };
+        let after = match &file.kind {
+            Kind::Owned { digest: expected } => {
+                if digest(&current) != *expected {
+                    continue;
+                }
+                None
+            }
+            Kind::Block => Some(marked(&String::from_utf8(current.clone())?, None)?.into_bytes()),
+            Kind::Hook { agent, command } => Some(serde_json::to_vec_pretty(&merge_hook(
+                serde_json::from_slice(&current)?,
+                agent,
+                command,
+                true,
+            )?)?),
+        };
+        let mut edit = make_edit(file.path.clone(), Vec::new(), file.kind.clone(), false)?;
+        edit.before = Some(current);
+        edit.after = after;
+        edits.push(edit);
+    }
+    Ok(())
+}
+
+/// The watcher may replace itself after Homebrew changes the stable opt link.
+pub fn homebrew_upgrade(state: &Path, current: &Path) -> Result<Option<PathBuf>> {
+    let Some(bytes) = optional(&state.join("install.json"))? else {
+        return Ok(None);
+    };
+    let manifest: Manifest = serde_json::from_slice(&bytes)?;
+    if manifest.distribution != Distribution::Homebrew {
+        return Ok(None);
+    }
+    let next = manifest.binary.canonicalize()?;
+    let location = distribution::installation_binary(&next, &manifest.home)?;
+    if location.distribution != Distribution::Homebrew || location.path != manifest.binary {
+        return Err(invalid(
+            "saved Homebrew path no longer identifies a managed executable",
+        ));
+    }
+    let current = current
+        .canonicalize()
+        .unwrap_or_else(|_| current.to_owned());
+    Ok((next != current).then_some(location.path))
 }
 
 fn apply_transaction(state: &Path, home: &Path, edits: &[Edit], manifest: &Manifest) -> Result<()> {
@@ -551,7 +626,7 @@ fn apply_transaction(state: &Path, home: &Path, edits: &[Edit], manifest: &Manif
         journal.entries.push(JournalEntry {
             path: edit.path.clone(),
             backup: original,
-            after_digest: digest(&edit.after),
+            after_digest: edit.after.as_deref().map(digest),
             mode: edit.mode,
         });
     }
@@ -564,11 +639,15 @@ fn apply_transaction(state: &Path, home: &Path, edits: &[Edit], manifest: &Manif
             if optional(&edit.path)? != edit.before {
                 return Err(invalid("configuration changed while setup was applying"));
             }
-            if edit.before.as_ref() != Some(&edit.after) {
-                files::atomic_write(&edit.path, &edit.after)?;
+            if edit.before != edit.after {
+                if let Some(after) = &edit.after {
+                    files::atomic_write(&edit.path, after)?;
+                } else {
+                    fs::remove_file(&edit.path)?;
+                }
             }
             #[cfg(unix)]
-            if edit.executable {
+            if edit.executable && edit.after.is_some() {
                 use std::os::unix::fs::PermissionsExt;
                 fs::set_permissions(&edit.path, fs::Permissions::from_mode(0o755))?;
             }
@@ -623,10 +702,7 @@ fn recover_unlocked(state: &Path, home: &Path) -> Result<()> {
         }
     }
     for entry in journal.entries.iter().rev() {
-        if optional(&entry.path)?
-            .as_ref()
-            .is_none_or(|b| digest(b) != entry.after_digest)
-        {
+        if optional(&entry.path)?.as_deref().map(digest) != entry.after_digest {
             continue;
         }
         if let Some(backup) = &entry.backup {

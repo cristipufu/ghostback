@@ -36,6 +36,7 @@ Ghostty source references checked at v1.4.0:
 | `native` | macOS PID/birth identity, ancestry, executable and argv inspection |
 | `macos` | Read-only Ghostty inventory and the TTY-to-UUID bridge |
 | `app` | Capture watcher, shell readiness, and agent launch orchestration |
+| `distribution` | Executable ownership and stable Homebrew path detection |
 | `install` | Configuration planning, ownership, journaled setup, rollback, uninstall |
 | `files` | Bounded reads, atomic configuration writes, exclusive helper locks |
 | `process` | Subprocess deadlines, bounded nonblocking output, owned-child cleanup |
@@ -121,7 +122,15 @@ preserves concurrent user changes and restores original file modes.
 A nonblocking file lock admits one watcher and one installer per state directory.
 Atomic writes use exclusive temporary files, synchronization, and rename.
 Uninstall removes owned integrations, preserves modified files, and keeps
-conversation state. CLI upgrades can be applied by rerunning setup.
+conversation state. Standalone CLI upgrades can be applied by rerunning setup.
+
+Homebrew setup references the stable `opt/ghostback/bin/ghostback` link and never
+copies or claims ownership of the Cellar executable. Standalone-to-Homebrew
+migration removes old owned hooks and unchanged copies in the same journaled
+transaction; modified user files survive. Deletions have rollback backups too.
+The watcher checks for a changed Homebrew target between capture passes and
+executes the new version. Its lock descriptor is close-on-exec so the replacement
+can acquire the watcher lock. Uninstall leaves package removal to Homebrew.
 
 ## Extension rules
 

@@ -21,9 +21,9 @@ to each terminal and reconnects it when that terminal's shell is ready.
 It supports **Claude Code, Codex, Antigravity (`agy`), and Grok Build** on
 **macOS with Ghostty 1.4+ and zsh or bash**.
 
-> **Pre-release.** The capture, installation, background helper, and restoration
-> paths are implemented. Signed public downloads are not published yet. See
-> [verification](docs/verification.md) for tested behavior and release qualification.
+> **v0.1.0.** Install through Homebrew below. See
+> [verification](docs/verification.md) for test evidence and the remaining
+> real-reboot and authenticated-agent qualification checks.
 
 ## Why Ghostback
 
@@ -40,16 +40,28 @@ It supports **Claude Code, Codex, Antigravity (`agy`), and Grok Build** on
 
 ## Get started
 
-Until release downloads are published, build from source:
+Install from the [Homebrew tap](https://github.com/cristipufu/homebrew-tap):
+
+```sh
+brew install cristipufu/tap/ghostback
+ghostback setup --dry-run
+ghostback setup
+```
+
+The prebuilt bottle currently targets **Apple Silicon on macOS 26 (Tahoe)**.
+It requires no Rust compiler or separate runtime. Other macOS configurations
+build from source and require Homebrew's build dependencies.
+
+To build from a checkout instead:
 
 ```sh
 cargo build --release --locked
-./target/release/ghostback setup --dry-run
 ./target/release/ghostback setup
 ```
 
-Setup installs the executable, a login helper, shell integration, and the agent
-hooks it needs. It preserves existing configuration, keeps backups, and enables
+Setup installs a login helper, shell integration, and the agent
+hooks it needs. Homebrew keeps ownership of the executable; standalone setup
+installs its own copy in `~/.local/bin`. It preserves existing configuration, keeps backups, and enables
 Ghostty's native window restoration. Open a new Ghostty tab after setup.
 
 Allow macOS Automation access when requested. Codex may also ask you to trust
@@ -124,6 +136,25 @@ Native agent registries are version-sensitive. An unsupported format is reported
 instead of being replaced with a “most recent conversation” guess. Existing
 custom shell functions that bypass PATH, alternate configuration roots, and
 changes in agent hook trust should be checked with `status` after setup.
+
+## Update or uninstall
+
+```sh
+brew update
+brew upgrade ghostback
+```
+
+Homebrew integrations use its stable `opt` path. The background capture helper
+picks up a new executable after an upgrade; no extra binary copy needs updating.
+
+Remove account integration before removing the package:
+
+```sh
+ghostback uninstall
+brew uninstall ghostback
+```
+
+Saved conversation state remains available for a later reinstall.
 
 ## Privacy and platform scope
 

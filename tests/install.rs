@@ -312,3 +312,143 @@ fn bash_prompt_integration_preserves_a_trailing_semicolon() {
     );
     assert_eq!(result.stdout, b"original");
 }
+
+#[cfg(unix)]
+fn brew_binary(options: &Options, version: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let prefix = options.home.parent().unwrap().join("brew");
+    let keg = prefix.join("Cellar/ghostback").join(version);
+    fs::create_dir_all(keg.join("bin")).unwrap();
+    let binary = keg.join("bin/ghostback");
+    fs::write(&binary, b"#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+    let stable = prefix.join("opt/ghostback");
+    fs::create_dir_all(stable.parent().unwrap()).unwrap();
+    if stable.symlink_metadata().is_ok() {
+        fs::remove_file(&stable).unwrap();
+    }
+    symlink(&keg, stable).unwrap();
+    binary.canonicalize().unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn homebrew_setup_uses_stable_path_and_uninstall_preserves_managed_binary() {
+    use ghostback::distribution::Distribution;
+    let (_root, mut options) = fixture();
+    options.source = brew_binary(&options, "0.1.0");
+    install::setup(&options).unwrap();
+    let manifest: install::Manifest =
+        serde_json::from_slice(&fs::read(options.state.join("install.json")).unwrap()).unwrap();
+    assert_eq!(manifest.distribution, Distribution::Homebrew);
+    assert!(manifest.binary.ends_with("opt/ghostback/bin/ghostback"));
+    assert!(!options.home.join(".local/bin/ghostback").exists());
+    assert!(
+        fs::read_to_string(options.home.join(".zshrc"))
+            .unwrap()
+            .contains(manifest.binary.to_str().unwrap())
+    );
+    assert!(!manifest.files.iter().any(|f| f.path == manifest.binary));
+    install::uninstall(&options.state, false).unwrap();
+    assert!(options.source.is_file());
+    assert!(manifest.binary.is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn broken_homebrew_link_fails_before_setup_writes() {
+    let (_root, mut options) = fixture();
+    options.source = brew_binary(&options, "0.1.0");
+    let prefix = options.source.ancestors().nth(5).unwrap();
+    fs::remove_file(prefix.join("opt/ghostback")).unwrap();
+    assert!(install::setup(&options).is_err());
+    assert!(!options.state.exists());
+    assert!(!options.home.join(".zshrc").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn watcher_detects_homebrew_upgrade_through_stable_link() {
+    let (_root, mut options) = fixture();
+    let old = brew_binary(&options, "0.1.0");
+    options.source = old.clone();
+    install::setup(&options).unwrap();
+    assert!(
+        install::homebrew_upgrade(&options.state, &old)
+            .unwrap()
+            .is_none()
+    );
+    let new = brew_binary(&options, "0.2.0");
+    let next = install::homebrew_upgrade(&options.state, &old)
+        .unwrap()
+        .unwrap();
+    assert_eq!(next.canonicalize().unwrap(), new);
+    assert!(
+        install::homebrew_upgrade(&options.state, &new)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn standalone_migration_replaces_hooks_and_removes_only_owned_copy() {
+    let (_root, mut options) = fixture();
+    install::setup(&options).unwrap();
+    let copied = options.home.join(".local/bin/ghostback");
+    assert!(copied.is_file());
+    options.source = brew_binary(&options, "0.1.0");
+    install::setup(&options).unwrap();
+    assert!(!copied.exists());
+    let hooks = fs::read_to_string(options.home.join(".claude/settings.json")).unwrap();
+    assert!(!hooks.contains(copied.to_str().unwrap()));
+    assert_eq!(hooks.matches("hook claude").count(), 2);
+    install::setup(&options).unwrap();
+    assert_eq!(
+        fs::read_to_string(options.home.join(".claude/settings.json")).unwrap(),
+        hooks
+    );
+    install::uninstall(&options.state, false).unwrap();
+    assert!(options.source.is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn migration_preserves_a_user_modified_old_copy() {
+    let (_root, mut options) = fixture();
+    install::setup(&options).unwrap();
+    let copied = options.home.join(".local/bin/ghostback");
+    fs::write(&copied, b"user replacement").unwrap();
+    options.source = brew_binary(&options, "0.1.0");
+    install::setup(&options).unwrap();
+    assert_eq!(fs::read(copied).unwrap(), b"user replacement");
+}
+
+#[test]
+fn rollback_restores_an_owned_file_deleted_during_migration() {
+    let (_root, options) = fixture();
+    fs::create_dir_all(options.state.join("setup-backup/migration")).unwrap();
+    let target = options.home.join("old-binary");
+    let backup = options.state.join("setup-backup/migration/0");
+    fs::write(&backup, b"old binary").unwrap();
+    let journal = json!({"home":options.home,"manifest_digest":"uncommitted","entries":[{"path":target,"backup":backup,"after_digest":null,"mode":493}]});
+    fs::write(
+        options.state.join("setup-pending.json"),
+        serde_json::to_vec(&journal).unwrap(),
+    )
+    .unwrap();
+    install::recover(&options.state, &options.home).unwrap();
+    assert_eq!(fs::read(target).unwrap(), b"old binary");
+}
+
+#[test]
+fn old_manifest_without_distribution_still_supports_setup() {
+    let (_root, options) = fixture();
+    install::setup(&options).unwrap();
+    let path = options.state.join("install.json");
+    let mut value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    value.as_object_mut().unwrap().remove("distribution");
+    fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    install::setup(&options).unwrap();
+    assert!(options.home.join(".local/bin/ghostback").is_file());
+}

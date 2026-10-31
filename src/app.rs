@@ -237,7 +237,24 @@ pub fn watch(store: &Store, once: bool) -> Result<()> {
     }
     let roots = Roots::from_home(&home()?);
     let mut state = WatchState::default();
+    let current = std::env::current_exe()?;
     loop {
+        #[cfg(unix)]
+        if !once {
+            use std::os::unix::process::CommandExt;
+            match crate::install::homebrew_upgrade(&store.directory, &current) {
+                Ok(Some(binary)) => {
+                    let error = Command::new(binary)
+                        .arg("--state-dir")
+                        .arg(&store.directory)
+                        .arg("watch")
+                        .exec();
+                    store.health("watcher.upgrade", &error.to_string())?;
+                }
+                Err(error) => store.health("watcher.upgrade", &error.to_string())?,
+                Ok(None) => {}
+            }
+        }
         if let Err(error) = scan(store, &roots, &mut state) {
             store.health("watcher", &error.to_string())?;
             if once {

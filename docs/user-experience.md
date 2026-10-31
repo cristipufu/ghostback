@@ -2,15 +2,18 @@
 
 ## One-time setup
 
-Build or obtain the standalone executable, then run:
+Install through Homebrew, then enable account integration:
 
 ```sh
+brew install cristipufu/tap/ghostback
 ghostback setup --dry-run
 ghostback setup
 ```
 
-Setup installs `~/.local/bin/ghostback`, a per-account login helper, shell prompt
-integration, lifecycle hooks, and Ghostty's native window-restoration setting.
+Setup installs a per-account login helper, shell prompt integration, lifecycle
+hooks, and Ghostty's native window-restoration setting. Homebrew installations
+use the stable `opt/ghostback/bin/ghostback` path; a standalone source or archive
+installation copies its executable to `~/.local/bin/ghostback`.
 It merges existing configuration and records its own changes for uninstall.
 Open a new Ghostty tab to load the shell integration.
 
@@ -19,7 +22,9 @@ one-time trust for its new hook. Run `ghostback status` to confirm capture.
 Existing Codex sessions using a shared server may require one fresh launch.
 
 No Python, uv, Rust toolchain, Node runtime, tmux, account, or remote service is
-needed to run the packaged executable. Source builds require Rust and a C compiler
+needed to run the packaged executable. The current Homebrew bottle targets Apple
+Silicon on macOS 26; other macOS configurations build from source. Source builds
+require Rust and a C compiler
 for bundled SQLite.
 
 ## Everyday use
@@ -86,8 +91,13 @@ recovery are outside this release's support scope.
 
 `ghostback uninstall` removes managed shell blocks, hooks, login integration,
 and unchanged owned executable files. It keeps recovery state and modified or
-unowned files. Open a new shell afterward to discard functions already loaded
+unowned files. A Homebrew-owned executable is never deleted by this command.
+Run `brew uninstall ghostback` afterward to remove the package. Open a new shell afterward to discard functions already loaded
 into existing shell processes.
+
+For upgrades, run `brew update` and `brew upgrade ghostback`. Integrations keep
+the stable executable path, and the watcher replaces itself when the Homebrew
+link moves to a new version. Existing agents continue running.
 
 ## Release acceptance scenario
 

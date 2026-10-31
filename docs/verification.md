@@ -7,7 +7,7 @@ made.
 
 ## Automated checks
 
-- **87 Rust tests pass** across session storage, adapters, installation, and
+- **94 Rust tests pass** across session storage, adapters, installation, and
   lifecycle behavior.
 - Formatting and strict Clippy checks pass for all targets in the checkout,
   including the test and release-tool sources.
@@ -30,6 +30,15 @@ subsequent results are available in the [CI workflow](https://github.com/cristip
 The dependency refresh uses the latest stable direct releases and refreshes
 compatible transitive packages. A standard SHA-256 known-answer test verifies
 that the `sha2` 0.11 migration preserves existing installer ownership fingerprints.
+
+## Homebrew integration
+
+Version 0.1.0 adds a formula, a prebuilt Apple Silicon macOS 26 bottle, and a
+release-driven tap updater. Installer tests cover stable opt paths, missing links,
+standalone migration, modified old binaries, ownership-preserving uninstall,
+upgrade detection, old manifest compatibility, and rollback after file deletion.
+The tap's CI builds from source and tests both the formula and the resulting
+bottle. Setup/uninstall verification uses a disposable HOME.
 
 ## Native integration evidence
 

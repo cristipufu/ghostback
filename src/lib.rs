@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod app;
 pub mod capture;
+pub mod distribution;
 pub mod files;
 pub mod install;
 pub mod lifecycle;
