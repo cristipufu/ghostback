@@ -649,3 +649,56 @@ fn codex_shim_refuses_recursive_launch() {
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("cannot launch itself"));
 }
+
+#[test]
+fn optional_native_hook_failures_are_quiet_and_visible_in_status() {
+    let root = TempDir::new().unwrap();
+    let payload = json!({"session_id":Uuid::from_u128(1),"cwd":root.path()}).to_string();
+    for strict in [false, true] {
+        let mut command = cli(&root);
+        command
+            .args(["hook", "claude"])
+            .env("GHOSTTY_SURFACE_ID", "1")
+            .env_remove("GHOSTBACK_HOST_KEY")
+            .env_remove("GHOSTBACK_TERMINAL_KEY")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if strict {
+            command.arg("--strict");
+        }
+        let mut child = command.spawn().unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(output.status.success(), !strict);
+        if !strict {
+            assert!(output.stderr.is_empty());
+        }
+    }
+    let state = store(&root);
+    assert!(state.list().unwrap().is_empty());
+    assert!(state.health_status().unwrap()["hook.claude"].starts_with("Capture skipped:"));
+}
+
+#[test]
+fn managed_quiet_hooks_contain_malformed_payload_errors() {
+    let root = TempDir::new().unwrap();
+    let mut child = cli(&root)
+        .args(["hook", "claude", "--quiet"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"not JSON").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(store(&root).list().unwrap().is_empty());
+    assert!(store(&root).health_status().unwrap()["hook.claude"].starts_with("Capture skipped:"));
+}

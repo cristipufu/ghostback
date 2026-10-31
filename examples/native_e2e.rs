@@ -93,12 +93,33 @@ fn fake_agent() -> Result<()> {
     } else {
         serde_json::json!({"session_id":Uuid::from_u128(1),"cwd":root,"hook_event_name":"SessionStart"})
     };
-    let mut child = Command::new(binary)
+    let mut command = Command::new(binary);
+    command
         .arg("--state-dir")
         .arg(root.join("state"))
         .args(["hook", agent.name()])
-        .stdin(Stdio::piped())
-        .spawn()?;
+        .stdin(Stdio::piped());
+    if agent == Agent::Claude {
+        // Reproduce hooks from a session opened before setup: no hints and no child TTY.
+        command
+            .env_remove("GHOSTBACK_TERMINAL_KEY")
+            .env_remove("GHOSTBACK_HOST_KEY");
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            // SAFETY: setsid is async-signal-safe and touches no Rust runtime state.
+            unsafe {
+                command.pre_exec(|| {
+                    if libc::setsid() < 0 {
+                        Err(std::io::Error::last_os_error())
+                    } else {
+                        Ok(())
+                    }
+                });
+            }
+        }
+    }
+    let mut child = command.spawn()?;
     child
         .stdin
         .take()

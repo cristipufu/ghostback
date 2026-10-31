@@ -117,7 +117,11 @@ pub fn register_hook(store: &Store, agent: Agent, payload: serde_json::Value) ->
         }
         uuid::Uuid::parse_str(&hint)?.to_string()
     } else {
-        macos::current_terminal_key()?
+        let key = macos::terminal_key_for_process(owner.pid)?;
+        if native::process(owner.pid)?.key() != owner.key() {
+            return Err(invalid("hook owner changed during terminal identification"));
+        }
+        key
     };
     let Some(mut session) = session else {
         store.clear_selection(

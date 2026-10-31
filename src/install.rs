@@ -500,7 +500,7 @@ pub fn setup(options: &Options) -> Result<Vec<PathBuf>> {
             }
         }
         let command = format!(
-            "{} --state-dir {} hook {agent}",
+            "{} --state-dir {} hook {agent} --quiet",
             shell_quote(&binary.to_string_lossy()),
             shell_quote(&state.to_string_lossy())
         );

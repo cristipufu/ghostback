@@ -83,6 +83,12 @@ enum Commands {
     Hook {
         #[arg(value_enum)]
         agent: Agent,
+        /// Return native capture failures to the caller (for diagnostics).
+        #[arg(long, hide = true, conflicts_with = "quiet")]
+        strict: bool,
+        /// Keep optional hook errors in Ghostback diagnostics.
+        #[arg(long, hide = true)]
+        quiet: bool,
     },
     /// Preview exact recovery commands. Does not execute them.
     Plan {
@@ -139,6 +145,37 @@ fn doctor(state_dir: &Path) -> serde_json::Value {
 
 fn display_path(path: Option<PathBuf>) -> Option<String> {
     path.map(|value| value.to_string_lossy().into_owned())
+}
+
+fn read_hook(store: &Store, agent: Agent, strict: bool) -> Result<()> {
+    let mut bytes = Vec::new();
+    io::stdin()
+        .take(MAX_HOOK_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_HOOK_BYTES {
+        return Err(invalid("hook payload exceeds the 1 MiB limit"));
+    }
+    let payload = serde_json::from_slice(&bytes)?;
+    // Reject malformed input before native automation or diagnostic writes.
+    if !ghostback::sessions::unselected(agent, &payload)? {
+        hook_session(agent, payload.clone(), "unbound")?;
+    }
+    if std::env::var_os("GHOSTTY_SURFACE_ID").is_some()
+        || std::env::var_os("GHOSTBACK_HOST_KEY").is_some()
+    {
+        let result = app::register_hook(store, agent, payload);
+        let diagnostic = match result {
+            Ok(()) => "captured".to_owned(),
+            Err(error) if strict || matches!(agent, Agent::Pi | Agent::Opencode) => {
+                return Err(error);
+            }
+            Err(error) => format!("Capture skipped: {error}"),
+        };
+        // An optional native hook must never disrupt the user's agent prompt.
+        // A diagnostic write failure must not turn into a second hook failure.
+        let _ = store.health(&format!("hook.{}", agent.name()), &diagnostic);
+    }
+    Ok(())
 }
 
 fn run(cli: Cli, out: &mut impl Write) -> Result<i32> {
@@ -271,24 +308,19 @@ fn run(cli: Cli, out: &mut impl Write) -> Result<i32> {
                 session.terminal_key
             )?;
         }
-        Commands::Hook { agent } => {
-            let mut bytes = Vec::new();
-            io::stdin()
-                .take(MAX_HOOK_BYTES + 1)
-                .read_to_end(&mut bytes)?;
-            if bytes.len() as u64 > MAX_HOOK_BYTES {
-                return Err(invalid("hook payload exceeds the 1 MiB limit"));
-            }
-            let payload = serde_json::from_slice(&bytes)?;
-            // Validate before consulting Ghostty; malformed hooks cannot cause automation.
-            if std::env::var_os("GHOSTTY_SURFACE_ID").is_some()
-                || std::env::var_os("GHOSTBACK_HOST_KEY").is_some()
-            {
-                app::register_hook(&store, agent, payload)?;
-            } else {
-                if !ghostback::sessions::unselected(agent, &payload)? {
-                    hook_session(agent, payload, "unbound")?;
+        Commands::Hook {
+            agent,
+            strict,
+            quiet,
+        } => {
+            if let Err(error) = read_hook(&store, agent, strict) {
+                if !quiet {
+                    return Err(error);
                 }
+                let _ = store.health(
+                    &format!("hook.{}", agent.name()),
+                    &format!("Capture skipped: {error}"),
+                );
             }
         }
         Commands::Plan { json: as_json } => {

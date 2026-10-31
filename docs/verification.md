@@ -7,7 +7,7 @@ made.
 
 ## Automated checks
 
-- **105 Rust tests pass** across session storage, adapters, installation, and
+- **107 Rust tests pass** across session storage, adapters, installation, and
   lifecycle behavior.
 - Formatting and strict Clippy checks pass for all targets in the checkout,
   including the test and release-tool sources.
@@ -16,7 +16,7 @@ made.
 - The package contains a standalone native executable, MIT license, README,
   contributor guide, documentation, third-party notices for 43 normal/build
   dependencies, and a SHA-256 checksum sidecar.
-- The Apple Silicon executable measures **2,492,880 bytes (2.49 MB)**, below the
+- The Apple Silicon executable measures approximately **2.5 MB**, below the
   enforced **10 MiB** limit. SQLite is compiled in. The dynamic dependencies are
   macOS system libraries (`libSystem` and `libiconv`).
 - The extracted package runs with an empty environment plus HOME and system
@@ -58,11 +58,11 @@ the generated shell integration, and a fake local agent. These cases passed:
 
 | Agent fixture | Shell | Acknowledgement |
 | --- | --- | --- |
-| Claude | zsh | Exact lifecycle hook |
+| Claude | zsh | Detached hook without host hints, resolved through owning-agent TTY |
 | Codex | zsh | Exact lifecycle hook; dedicated-server flag retained |
 | agy | zsh | Native conversation/workspace hook payload |
 | Grok | zsh | Registry matching PID and process birth time |
-| Claude | bash | Exact lifecycle hook |
+| Claude | bash | Detached hook without host hints, resolved through owning-agent TTY |
 
 Each fixture verified the native terminal UUID, automatic prompt invocation,
 exact resume arguments, conversation acknowledgement, and retirement on normal
@@ -86,7 +86,8 @@ model call, and launched each actual CLI through generated shell recovery in
 its own Ghostty window. Both acknowledged the exact target and preserved the
 allowlisted launch options. Pi used a case-sensitive custom ID and a session
 path containing spaces and quotes. Its saved executable was verified as `pi`,
-not Node. OpenCode's fixture created a session through a temporary local API
+not Node. Both npm and the official standalone macOS Pi 1.4.0 download passed.
+OpenCode's fixture created a session through a temporary local API
 server, then resumed it in the normal local TUI. No credentials were configured
 and no prompts were submitted.
 

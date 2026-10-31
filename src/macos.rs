@@ -74,13 +74,21 @@ pub fn current_terminal_key() -> Result<String> {
             "GHOSTTY_SURFACE_ID is missing; not a tracked Ghostty process",
         ));
     }
+    terminal_key_for_process(std::process::id())
+}
+
+/// Hooks may have no TTY of their own. Use the already-validated owning agent.
+pub fn terminal_key_for_process(pid: u32) -> Result<String> {
     if !cfg!(target_os = "macos") {
         return Err(invalid(
             "automatic terminal identification currently supports macOS only",
         ));
     }
-    // The core hex ID is NOT the AppleScript UUID. Join using the controlling TTY.
-    let pid = std::process::id().to_string();
+    if pid <= 1 || pid > i32::MAX as u32 {
+        return Err(invalid("invalid terminal owner process"));
+    }
+    // The core hex ID is NOT the AppleScript UUID. Join using the owner's controlling TTY.
+    let pid = pid.to_string();
     let tty = process::output(
         "/bin/ps",
         &["-p", &pid, "-o", "tty="],

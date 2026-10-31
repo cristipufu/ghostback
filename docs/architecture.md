@@ -11,7 +11,8 @@ the terminal key and lets Ghostty own windows, tabs, splits, and layout recovery
 
 `GHOSTTY_SURFACE_ID` is a separate core identifier: a u64 formatted as hex.
 It identifies the environment as Ghostty, but is never used as the persistent
-terminal UUID. A hook's controlling TTY joins it to the native terminal inventory.
+terminal UUID. The owning agent's controlling TTY joins a hook to the native
+terminal inventory; the hook subprocess itself can be detached and have no TTY.
 An ambiguous join is rejected.
 
 Process identities combine PID and OS process birth time, not PID alone. Reads
@@ -91,6 +92,12 @@ Pi restoration checks a regular, non-symlink file's bounded first-line header
 against its saved ID and directory before invoking `pi --session <file>`.
 OpenCode uses `opencode --session <id>` in the selected session's directory.
 No missing Pi file is passed to a CLI that could silently create a new session.
+
+Native agent hooks use best-effort capture. Failures are visible in `status`
+rather than agent prompt errors; managed hook commands also use `--quiet` to
+contain malformed-input failures. `hook --strict` is available for diagnosis.
+No successful exit code is treated as a restore acknowledgement without the
+actual captured binding.
 
 ## Durable lifecycle
 
