@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod app;
+pub mod bridges;
 pub mod capture;
 pub mod distribution;
 pub mod files;

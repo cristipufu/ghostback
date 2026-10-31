@@ -19,6 +19,7 @@ pub enum Kind {
     Block,
     Hook { agent: String, command: String },
     Owned { digest: String },
+    Plugin { specifier: String },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InstalledFile {
@@ -387,6 +388,47 @@ pub fn setup(options: &Options) -> Result<Vec<PathBuf>> {
         );
         own(shim.clone(), body.into_bytes(), true)?;
     }
+    let (pi_root, opencode_root) =
+        crate::bridges::roots(home, app::home().is_ok_and(|actual| actual == *home));
+    validate_path(&pi_root)?;
+    validate_path(&opencode_root)?;
+    let opencode_plugin = state.join("integrations/opencode.mjs");
+    own(
+        pi_root.join("extensions/ghostback.js"),
+        crate::bridges::source("pi", &binary, state)?,
+        false,
+    )?;
+    own(
+        opencode_plugin.clone(),
+        crate::bridges::source("opencode", &binary, state)?,
+        false,
+    )?;
+    let tui_config = if opencode_root.join("tui.jsonc").is_file() {
+        opencode_root.join("tui.jsonc")
+    } else {
+        opencode_root.join("tui.json")
+    };
+    let specifier = crate::bridges::file_url(&opencode_plugin)?;
+    let mut input = text(&tui_config)?;
+    if let Some(previous) = &previous {
+        for file in &previous.files {
+            if file.path == tui_config
+                && let Kind::Plugin {
+                    specifier: previous_specifier,
+                } = &file.kind
+                && previous_specifier != &specifier
+            {
+                input = crate::bridges::merge_plugin(&input, previous_specifier, true)?;
+            }
+        }
+    }
+    let after = crate::bridges::merge_plugin(&input, &specifier, false)?;
+    edits.push(make_edit(
+        tui_config,
+        after.into_bytes(),
+        Kind::Plugin { specifier },
+        false,
+    )?);
     for (path, bash) in [
         (home.join(".zshrc"), false),
         (home.join(".bashrc"), true),
@@ -560,6 +602,14 @@ fn append_retired_integrations(edits: &mut Vec<Edit>, previous: &Manifest) -> Re
                 None
             }
             Kind::Block => Some(marked(&String::from_utf8(current.clone())?, None)?.into_bytes()),
+            Kind::Plugin { specifier } => Some(
+                crate::bridges::merge_plugin(
+                    &String::from_utf8(current.clone())?,
+                    specifier,
+                    true,
+                )?
+                .into_bytes(),
+            ),
             Kind::Hook { agent, command } => Some(serde_json::to_vec_pretty(&merge_hook(
                 serde_json::from_slice(&current)?,
                 agent,
@@ -757,6 +807,11 @@ pub fn uninstall(state: &Path, launch: bool) -> Result<Vec<PathBuf>> {
                 if input != output {
                     edits.push((file.path.clone(), Some(output.into_bytes())));
                 }
+            }
+            Kind::Plugin { specifier } => {
+                let output =
+                    crate::bridges::merge_plugin(&String::from_utf8(current)?, specifier, true)?;
+                edits.push((file.path.clone(), Some(output.into_bytes())));
             }
             Kind::Hook { agent, command } => {
                 let value: Value = serde_json::from_slice(&current)?;

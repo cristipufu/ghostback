@@ -21,7 +21,14 @@ fn kind(agent: Agent, flag: &str) -> Kind {
     }
     if matches!(
         flag,
-        "--resume" | "-r" | "--conversation" | "--session-id" | "--log-file" | "--cd" | "-C"
+        "--resume"
+            | "-r"
+            | "--conversation"
+            | "--session"
+            | "--session-id"
+            | "--log-file"
+            | "--cd"
+            | "-C"
     ) {
         return Kind::SkipValue;
     }
@@ -32,6 +39,21 @@ fn kind(agent: Agent, flag: &str) -> Kind {
         return Kind::Stop;
     }
     match agent {
+        Agent::Pi => match flag {
+            "--provider" | "--thinking" | "--session-dir" => Kind::Value,
+            "--no-session" | "--no-extensions" => Kind::Stop,
+            "--print" | "-p" | "--mode" | "--fork" => Kind::Stop,
+            "-c" => Kind::SkipFlag,
+            _ => Kind::Unknown,
+        },
+        Agent::Opencode => match flag {
+            "--auto" => Kind::Flag,
+            "--mini" | "--no-replay" | "--pure" | "--replay-limit" => Kind::Stop,
+            "-s" => Kind::SkipValue,
+            "-c" | "--fork" => Kind::SkipFlag,
+            "--prompt" => Kind::Stop,
+            _ => Kind::Unknown,
+        },
         Agent::Codex => match flag {
             "--profile" | "-p" | "--sandbox" | "--ask-for-approval" | "-a" => Kind::Value,
             "--no-daemon"
@@ -77,6 +99,10 @@ pub fn replay_options(agent: Agent, argv: &[String]) -> Result<Vec<String>> {
         let arg = &argv[i];
         if agent == Agent::Codex && arg == "resume" {
             i += 2;
+            continue;
+        }
+        if agent == Agent::Opencode && !arg.starts_with('-') {
+            i += 1;
             continue;
         }
         let (flag, inline) = arg
@@ -140,6 +166,23 @@ pub fn validate_options(agent: Agent, options: &[String]) -> Result<()> {
 }
 
 pub fn interactive(agent: Agent, args: &[String]) -> bool {
+    if agent == Agent::Pi
+        && args
+            .iter()
+            .any(|a| matches!(a.as_str(), "--no-extensions" | "--mode") || a.starts_with("--mode="))
+    {
+        return false;
+    }
+    if agent == Agent::Opencode
+        && args.iter().any(|a| {
+            matches!(
+                a.as_str(),
+                "--pure" | "--mini" | "--no-replay" | "--replay-limit"
+            )
+        })
+    {
+        return false;
+    }
     if agent == Agent::Codex
         && args
             .get(1)
@@ -153,12 +196,44 @@ pub fn interactive(agent: Agent, args: &[String]) -> bool {
             .split_once('=')
             .map(|(a, b)| (a, Some(b)))
             .unwrap_or((&args[i], None));
+        if agent == Agent::Opencode
+            && matches!(
+                flag,
+                "attach"
+                    | "run"
+                    | "serve"
+                    | "web"
+                    | "acp"
+                    | "auth"
+                    | "models"
+                    | "session"
+                    | "db"
+                    | "export"
+                    | "import"
+                    | "upgrade"
+                    | "uninstall"
+                    | "mcp"
+                    | "agent"
+                    | "github"
+                    | "pr"
+                    | "completion"
+                    | "debug"
+                    | "providers"
+                    | "stats"
+                    | "plugin"
+                    | "plug"
+            )
+        {
+            return false;
+        }
         if flag == "--" {
             break;
         }
         if match agent {
             Agent::Claude | Agent::Agy => matches!(flag, "--print" | "-p" | "--prompt"),
             Agent::Grok => matches!(flag, "--single" | "-p" | "--prompt-file" | "--prompt-json"),
+            Agent::Pi => matches!(flag, "--print" | "-p"),
+            Agent::Opencode => flag == "--prompt",
             Agent::Codex => false,
         } {
             return false;

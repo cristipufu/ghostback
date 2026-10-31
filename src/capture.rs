@@ -252,6 +252,21 @@ pub fn resolve(
     });
     let mut allow_hook = true;
     let found = match agent {
+        Agent::Pi | Agent::Opencode => {
+            if let Some(b) = from_hook {
+                if native::process(owner.pid)?.key() != owner.key() {
+                    return Err(invalid("agent process changed during capture"));
+                }
+                return Ok(Some(Capture {
+                    session: b.session,
+                    shell_key: shell.key(),
+                    owner_key: owner.key(),
+                    executable: b.executable,
+                    options: b.options,
+                }));
+            }
+            return Ok(None);
+        }
         Agent::Claude => read_optional(
             &roots
                 .claude
@@ -303,7 +318,10 @@ pub fn resolve(
         }
         Agent::Codex => {
             if let Some(binding) = from_hook.as_ref() {
-                Some((binding.session.session_id, binding.session.cwd.clone()))
+                Some((
+                    Uuid::parse_str(binding.session.session_id.as_str())?,
+                    binding.session.cwd.clone(),
+                ))
             } else {
                 let mut paths = cache.open_files(owner)?;
                 // A dedicated app-server can own the rollout instead of the TUI.
@@ -334,9 +352,11 @@ pub fn resolve(
         }
     };
     let Some((id, directory)) = found.or_else(|| {
-        from_hook
-            .filter(|_| allow_hook)
-            .map(|b| (b.session.session_id, b.session.cwd))
+        from_hook.filter(|_| allow_hook).and_then(|b| {
+            Uuid::parse_str(b.session.session_id.as_str())
+                .ok()
+                .map(|id| (id, b.session.cwd))
+        })
     }) else {
         return Ok(None);
     };
@@ -349,7 +369,7 @@ pub fn resolve(
         shell_key: shell.key(),
         owner_key: owner.key(),
         executable: owner.executable.clone(),
-        options: replay_options(agent, &owner.argv)?,
+        options: replay_options(agent, owner.agent_argv(agent))?,
     }))
 }
 

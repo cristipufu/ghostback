@@ -73,6 +73,8 @@ enum Commands {
         #[arg(long)]
         session_id: String,
         #[arg(long)]
+        session_file: Option<PathBuf>,
+        #[arg(long)]
         terminal_key: String,
         #[arg(long)]
         cwd: Option<PathBuf>,
@@ -128,7 +130,7 @@ fn doctor(state_dir: &Path) -> serde_json::Value {
         "platform": std::env::consts::OS,
         "architecture": std::env::consts::ARCH,
         "ghostty": {"path": display_path(ghostty), "version": version, "error": error},
-        "agents": {"agy": display_path(find_program("agy")), "codex": display_path(find_program("codex")), "claude": display_path(find_program("claude")), "grok": display_path(find_program("grok"))},
+        "agents": {"agy": display_path(find_program("agy")), "codex": display_path(find_program("codex")), "claude": display_path(find_program("claude")), "grok": display_path(find_program("grok")), "pi": display_path(find_program("pi")), "opencode": display_path(find_program("opencode"))},
         "state_directory": state_dir.to_string_lossy(),
         "automatic_restore": "available after ghostback setup; runs at restored shell prompts",
         "terminal_integration_target": "macOS, Ghostty 1.4+"
@@ -248,6 +250,7 @@ fn run(cli: Cli, out: &mut impl Write) -> Result<i32> {
         Commands::Record {
             agent,
             session_id,
+            session_file,
             terminal_key,
             cwd,
         } => {
@@ -256,7 +259,9 @@ fn run(cli: Cli, out: &mut impl Write) -> Result<i32> {
             if !cwd.is_dir() {
                 return Err(invalid("working directory is not a directory"));
             }
-            let session = Session::new(terminal_key, agent, &session_id, cwd)?;
+            let mut session = Session::new(terminal_key, agent, &session_id, cwd)?;
+            session.session_file = session_file.map(|p| p.canonicalize()).transpose()?;
+            session.validate_resume()?;
             store.record(&session)?;
             writeln!(
                 out,
@@ -281,7 +286,9 @@ fn run(cli: Cli, out: &mut impl Write) -> Result<i32> {
             {
                 app::register_hook(&store, agent, payload)?;
             } else {
-                hook_session(agent, payload, "unbound")?;
+                if !ghostback::sessions::unselected(agent, &payload)? {
+                    hook_session(agent, payload, "unbound")?;
+                }
             }
         }
         Commands::Plan { json: as_json } => {
@@ -289,7 +296,7 @@ fn run(cli: Cli, out: &mut impl Write) -> Result<i32> {
             if as_json {
                 let rows: Vec<_> = sessions.iter().map(|s| json!({
                     "terminal_key": s.terminal_key, "agent": s.agent, "session_id": s.session_id,
-                    "cwd": s.cwd, "argv": s.argv(), "cwd_exists": s.cwd.is_dir()
+                    "cwd": s.cwd, "session_file": s.session_file, "argv": s.argv(), "cwd_exists": s.cwd.is_dir()
                 })).collect();
                 writeln!(out, "{}", serde_json::to_string_pretty(&rows)?)?;
             } else if sessions.is_empty() {

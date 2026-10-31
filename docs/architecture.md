@@ -33,6 +33,7 @@ Ghostty source references checked at v1.4.0:
 | `lifecycle` | Captures, restore claims, acknowledgement, retirement, retry |
 | `agents` | Agent-specific interactive modes and replayable argument policy |
 | `capture` | Owned-process registries, hooks, and incremental log adapters |
+| `bridges` | Embedded agent-runtime bridges, configuration roots, comment-preserving TUI config edits |
 | `native` | macOS PID/birth identity, ancestry, executable and argv inspection |
 | `macos` | Read-only Ghostty inventory and the TTY-to-UUID bridge |
 | `app` | Capture watcher, shell readiness, and agent launch orchestration |
@@ -54,6 +55,8 @@ terminal-input injection, transcript copy, embedded interpreter, or network serv
 | Codex | Lifecycle hooks bound through a dedicated `--no-daemon` TUI; unambiguous process-owned rollout metadata as fallback |
 | agy | Lifecycle hooks; current conversation in its process-owned log |
 | Grok Build | Active-session registry matching both PID and exact process birth time |
+| Pi | In-process TUI extension, exact ID and absolute session-file path; bounded header validation |
+| OpenCode | TUI plugin reading the selected route and matching session metadata |
 
 The watcher samples every two seconds. Open-file discovery is cached for fifteen
 seconds per process generation. agy logs are read incrementally; partial lines,
@@ -69,6 +72,25 @@ association. Setup therefore installs a PATH shim for interactive Codex inside
 Ghostty. It adds `--no-daemon` and an ancestry-validated terminal hint. It preserves
 normal aliases, models, and permission flags. Sessions started before this
 integration can remain unresolved; the fallback never guesses by directory.
+
+Pi and OpenCode emit selection changes through bounded child processes with
+JSON on stdin, never through a shell. The bridge's claimed PID must match the
+interactive process found through OS ancestry. Pi changes `process.title`,
+which destroys kernel argv; the extension supplies its original in-process
+argv, and Rust applies the same launch-option allowlist. Only those supported
+options and the executable path reach storage.
+
+Each UI observation includes a monotonic timestamp. SQLite serializes it with
+capture or selection clearing, rejecting late callbacks from the same process.
+The watcher reads these bindings for diagnostics and never recaptures stale UI
+snapshots. Compare-and-update diagnostics cannot overwrite a fresh bridge
+acknowledgement. Empty/unpersisted selection enters attention while preserving
+the old identity. Shutdown events alone do not retire sessions.
+
+Pi restoration checks a regular, non-symlink file's bounded first-line header
+against its saved ID and directory before invoking `pi --session <file>`.
+OpenCode uses `opencode --session <id>` in the selected session's directory.
+No missing Pi file is passed to a CLI that could silently create a new session.
 
 ## Durable lifecycle
 
@@ -108,11 +130,13 @@ comparison, preserving recovery data across application shutdown.
 ## Persistence and installation
 
 SQLite uses WAL, full synchronization, bounded busy waits, and transactions.
-Schema v1 recordings remain readable; a write upgrades to v2 lifecycle storage.
+Schema v1/v2 recordings remain readable; a write upgrades transactionally to v3,
+adding agent-specific string IDs, optional Pi file paths, and ordered UI
+observations. Existing UUID identities are preserved.
 Unknown newer schemas are refused before modification. State is local and its
 new directory is private to the account.
 
-Setup plans and validates every edit before application. It merges hooks and
+Setup plans and validates every edit before application. It merges hooks, comment-preserving OpenCode plugin entries, and
 managed configuration blocks, refuses unrelated executable ownership, and
 records SHA-256 fingerprints. A write-ahead setup journal and private backups
 allow recovery after interrupted application. The installed manifest is the

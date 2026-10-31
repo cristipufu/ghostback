@@ -18,10 +18,10 @@ You reopen Ghostty after a restart. Your tabs return, but the agents inside them
 need to be resumed one by one. Ghostback remembers which conversation belongs
 to each terminal and reconnects it when that terminal's shell is ready.
 
-It supports **Claude Code, Codex, Antigravity (`agy`), and Grok Build** on
+It supports **Claude Code, Codex, Antigravity (`agy`), Grok Build, Pi, and OpenCode** on
 **macOS with Ghostty 1.4+ and zsh or bash**.
 
-> **v0.1.0.** Install through Homebrew below. See
+> **v0.2.0.** Install through Homebrew below. See
 > [verification](docs/verification.md) for test evidence and the remaining
 > real-reboot and authenticated-agent qualification checks.
 
@@ -73,6 +73,8 @@ claude
 codex
 agy
 grok
+pi
+opencode
 ```
 
 Existing sessions started before setup may need one new launch before they can
@@ -104,6 +106,12 @@ the conversation; an interrupted or mismatched attempt needs attention.
 Inside Ghostty, setup adds a small PATH shim that starts interactive Codex with
 `--no-daemon`. You still use `codex` normally; existing aliases remain intact.
 Model and permission choices are not changed by that shim.
+
+**Pi and OpenCode:** setup installs small bridges into the agents' existing
+runtimes. Pi records its exact session-file path and ID; OpenCode reads the
+selected session directly from its TUI. Conversation switches are tracked, and
+an empty or unsaved session cannot revive an older binding. See
+[agent compatibility](docs/agents.md) for supported modes and configuration roots.
 
 Closing an agent deliberately retires its binding when the shell prompt returns.
 Closing a tab is tracked separately. Sleep/wake does not relaunch agents that
@@ -143,10 +151,12 @@ changes in agent hook trust should be checked with `status` after setup.
 ```sh
 brew update
 brew upgrade ghostback
+ghostback setup
 ```
 
 Homebrew integrations use its stable `opt` path. The background capture helper
-picks up a new executable after an upgrade; no extra binary copy needs updating.
+picks up a new executable after an upgrade. Rerun `setup` to install or refresh
+agent integrations, then restart Pi/OpenCode so they load their bridges.
 
 Remove account integration before removing the package:
 
@@ -160,7 +170,7 @@ Saved conversation state remains available for a later reinstall.
 ## Privacy and platform scope
 
 State stays in `~/Library/Application Support/Ghostback`. It contains terminal
-and conversation IDs, directories, supported launch options, installation
+and conversation IDs, Pi session-file paths, directories, supported launch options, installation
 backups, and recovery outcomes. Chat transcripts are not copied into that state.
 Uninstall keeps recovery data and preserves modified or unowned files.
 
@@ -176,6 +186,7 @@ qualification is tracked separately in the verification document.
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
+node --test tests/bridges.mjs # development-only bridge tests
 sh scripts/package.sh
 ```
 

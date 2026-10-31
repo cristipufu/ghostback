@@ -78,8 +78,8 @@ fn wrong_session_acknowledgement_never_overwrites_saved_identity() {
     let (_root, store, mut capture) = fixture();
     store.capture(&capture).unwrap();
     store.prepare("terminal", "200:3000000").unwrap();
-    let original = capture.session.session_id;
-    capture.session.session_id = Uuid::from_u128(2);
+    let original = capture.session.session_id.clone();
+    capture.session.session_id = Uuid::from_u128(2).into();
     assert!(store.capture(&capture).is_err());
     assert!(store.capture(&capture).is_err());
     assert_eq!(store.list().unwrap()[0].session_id, original);
@@ -187,7 +187,7 @@ fn completed_claim_does_not_block_a_later_conversation_switch() {
     store
         .attention("terminal", "transient metadata unavailable")
         .unwrap();
-    capture.session.session_id = Uuid::from_u128(2);
+    capture.session.session_id = Uuid::from_u128(2).into();
     store.capture(&capture).unwrap();
     assert_eq!(store.list().unwrap()[0].session_id, Uuid::from_u128(2));
 }

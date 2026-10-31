@@ -56,17 +56,46 @@ pub fn home() -> Result<PathBuf> {
 }
 
 pub fn register_hook(store: &Store, agent: Agent, payload: serde_json::Value) -> Result<()> {
-    let mut session = hook_session(agent, payload, "pending-native-identity")?;
+    let unselected = crate::sessions::unselected(agent, &payload)?;
+    let tick = if matches!(agent, Agent::Pi | Agent::Opencode) {
+        Some(
+            payload
+                .get("observed_ns")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| invalid("bridge observation has no monotonic timestamp"))?
+                .parse::<u64>()?,
+        )
+    } else {
+        None
+    };
+    let session = if unselected {
+        None
+    } else {
+        Some(hook_session(
+            agent,
+            payload.clone(),
+            "pending-native-identity",
+        )?)
+    };
     let mut current = native::process(std::process::id())?;
     let mut owner = None;
     for _ in 0..32 {
         current = native::process(current.parent)?;
-        if current.agent() == Some(agent) && crate::agents::interactive(agent, &current.argv) {
+        if current.agent() == Some(agent)
+            && crate::agents::interactive(agent, current.agent_argv(agent))
+        {
             owner = Some(current.clone());
             break;
         }
     }
     let owner = owner.ok_or_else(|| invalid("hook has no owning interactive agent process"))?;
+    if matches!(agent, Agent::Pi | Agent::Opencode)
+        && payload.get("owner_pid").and_then(|v| v.as_u64()) != Some(u64::from(owner.pid))
+    {
+        return Err(invalid(
+            "bridge is not running in its owning interactive agent",
+        ));
+    }
     let shell = native::shell_ancestor(&owner)?;
     let hint = std::env::var("GHOSTBACK_TERMINAL_KEY").ok();
     let host = std::env::var("GHOSTBACK_HOST_KEY").ok();
@@ -90,15 +119,51 @@ pub fn register_hook(store: &Store, agent: Agent, payload: serde_json::Value) ->
     } else {
         macos::current_terminal_key()?
     };
+    let Some(mut session) = session else {
+        store.clear_selection(
+            &key,
+            &owner.key(),
+            tick.ok_or_else(|| invalid("missing bridge timestamp"))?,
+        )?;
+        return Ok(());
+    };
     session.terminal_key = key;
-    let binary = agent_executable(agent, &owner);
-    store.capture(&Capture {
-        session,
-        shell_key: shell.key(),
-        owner_key: owner.key(),
-        executable: binary,
-        options: capture::replay_options(agent, &owner.argv)?,
-    })
+    let (binary, options) = if agent == Agent::Pi {
+        // Pi changes process.title, erasing kernel argv. Its in-process argv remains intact.
+        let args: Vec<String> = serde_json::from_value(
+            payload
+                .get("launch_argv")
+                .cloned()
+                .ok_or_else(|| invalid("Pi bridge has no launch arguments"))?,
+        )?;
+        if args.len() > 256 || args.iter().any(|s| s.len() > 8192 || s.contains('\0')) {
+            return Err(invalid("Pi launch arguments exceed capture limits"));
+        }
+        let script = args
+            .first()
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute() && is_executable(p))
+            .ok_or_else(|| invalid("Pi CLI script is unavailable"))?;
+        let binary = executable("pi")
+            .filter(|p| p.canonicalize().ok() == script.canonicalize().ok())
+            .unwrap_or(script);
+        (binary, capture::replay_options(agent, &args)?)
+    } else {
+        (
+            agent_executable(agent, &owner),
+            capture::replay_options(agent, owner.agent_argv(agent))?,
+        )
+    };
+    store.capture_observed(
+        &Capture {
+            session,
+            shell_key: shell.key(),
+            owner_key: owner.key(),
+            executable: binary,
+            options,
+        },
+        tick,
+    )
 }
 
 #[derive(Default)]
@@ -200,8 +265,34 @@ pub fn scan(store: &Store, roots: &Roots, state: &mut WatchState) -> Result<usiz
         }
         if owner
             .agent()
-            .is_some_and(|agent| !crate::agents::interactive(agent, &owner.argv))
+            .is_some_and(|agent| !crate::agents::interactive(agent, owner.agent_argv(agent)))
         {
+            continue;
+        }
+        if matches!(owner.agent(), Some(Agent::Pi | Agent::Opencode)) {
+            // Their UI bridge is authoritative. Rewriting a snapshot here could undo a switch.
+            let binding = store
+                .bindings()?
+                .into_iter()
+                .find(|b| b.session.terminal_key == key);
+            if binding
+                .as_ref()
+                .is_some_and(|b| b.owner_key == owner.key() && b.phase == "active")
+            {
+                store.health(&format!("terminal.{key}"), "captured")?;
+                captured += 1;
+            } else {
+                let reason = "Exact UI selection is unavailable. Restart the agent after ghostback setup; check plugins are enabled.";
+                if let Some(binding) = binding {
+                    store.attention_if_unchanged(
+                        &key,
+                        &binding.owner_key,
+                        &binding.phase,
+                        reason,
+                    )?;
+                }
+                store.health(&format!("terminal.{key}"), reason)?;
+            }
             continue;
         }
         let outcome = capture::resolve(store, roots, &owner, &key, &terminal.cwd, &mut state.cache);
@@ -312,6 +403,10 @@ pub fn shell_ready(store: &Store, shell_pid: u32) -> Result<()> {
         )?;
         return Ok(());
     }
+    if let Err(error) = binding.session.validate_resume() {
+        store.attention(&key, &error.to_string())?;
+        return Ok(());
+    }
     if !is_executable(&binding.executable) {
         store.attention(&key,"Agent executable moved or is unavailable. Run ghostback setup to refresh its path, then retry.")?;
         return Ok(());
@@ -331,7 +426,14 @@ pub fn shell_ready(store: &Store, shell_pid: u32) -> Result<()> {
     command
         .args(&options)
         .arg(binding.session.agent.resume_flag())
-        .arg(binding.session.session_id.to_string())
+        .arg(
+            binding
+                .session
+                .session_file
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| binding.session.session_id.to_string()),
+        )
         .current_dir(&binding.session.cwd)
         .env("GHOSTBACK_TERMINAL_KEY", &key)
         .env("GHOSTBACK_HOST_KEY", host);

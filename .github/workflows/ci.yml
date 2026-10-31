@@ -26,6 +26,9 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      - name: Check agent runtime bridges
+        if: matrix.os == 'ubuntu-latest'
+        run: node --test tests/bridges.mjs
       - name: Package and enforce size budget
         if: matrix.os == 'macos-26'
         run: |

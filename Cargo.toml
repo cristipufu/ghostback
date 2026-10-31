@@ -1,6 +1,6 @@
 [package]
 name = "ghostback"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Recover exact coding-agent conversations in native Ghostty terminals."
 license = "MIT"
@@ -14,6 +14,7 @@ serde_json = "1.0.154"
 uuid = { version = "1.29.0", features = ["serde"] }
 libc = "0.2.191"
 sha2 = "0.11.1"
+jsonc-parser = { version = "0.34.0", features = ["cst"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

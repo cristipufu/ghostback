@@ -84,6 +84,10 @@ impl Store {
     }
 
     pub fn capture(&self, capture: &Capture) -> Result<()> {
+        self.capture_observed(capture, None)
+    }
+
+    pub fn capture_observed(&self, capture: &Capture, tick: Option<u64>) -> Result<()> {
         capture.session.validate()?;
         let terminal_key = canonical_terminal_key(&capture.session.terminal_key);
         crate::agents::validate_options(capture.session.agent, &capture.options)?;
@@ -104,8 +108,22 @@ impl Store {
         if retired_owner.as_deref() == Some(&capture.owner_key) {
             return Ok(());
         }
-        let expected=tx.query_row("SELECT s.session_id FROM runtime r JOIN sessions s ON s.terminal_key=r.terminal_key WHERE r.terminal_key=?1 AND r.phase IN ('claim','attention') AND r.claim_shell<>''",[&terminal_key],|r|r.get::<_,String>(0)).optional()?;
-        if expected.is_some_and(|id| id != capture.session.session_id.to_string()) {
+        if let Some(tick) = tick
+            && !accept_observation(&tx, &terminal_key, &capture.owner_key, tick)?
+        {
+            return Ok(());
+        }
+        let expected=tx.query_row("SELECT s.agent,s.session_id,s.session_file FROM runtime r JOIN sessions s ON s.terminal_key=r.terminal_key WHERE r.terminal_key=?1 AND r.phase IN ('claim','attention') AND r.claim_shell<>''",[&terminal_key],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?))).optional()?;
+        if expected.is_some_and(|(agent, id, file)| {
+            agent != capture.session.agent.name()
+                || id != capture.session.session_id.to_string()
+                || file.as_deref()
+                    != capture
+                        .session
+                        .session_file
+                        .as_ref()
+                        .and_then(|p| p.to_str())
+        }) {
             tx.execute("UPDATE runtime SET phase='attention',reason='The launched agent reported a different conversation. Saved identity was preserved.' WHERE terminal_key=?1",[&terminal_key])?;
             tx.commit()?;
             return Err(invalid("restored conversation did not match its claim"));
@@ -166,6 +184,33 @@ impl Store {
         Ok(decision)
     }
 
+    pub fn clear_selection(&self, key: &str, owner: &str, tick: u64) -> Result<()> {
+        let mut db = self
+            .connect(true)?
+            .ok_or_else(|| invalid("state unavailable"))?;
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if !accept_observation(&tx, key, owner, tick)? {
+            return Ok(());
+        }
+        tx.execute("UPDATE runtime SET phase='attention',reason='No persistent conversation is selected. Select a saved conversation in the agent.' WHERE terminal_key=?1 AND phase<>'retired'", [key])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn attention_if_unchanged(
+        &self,
+        key: &str,
+        owner: &str,
+        phase: &str,
+        reason: &str,
+    ) -> Result<()> {
+        let db = self
+            .connect(true)?
+            .ok_or_else(|| invalid("state unavailable"))?;
+        db.execute("UPDATE runtime SET phase='attention',reason=?4 WHERE terminal_key=?1 AND owner_key=?2 AND phase=?3 AND phase<>'retired'",params![key,owner,phase,reason])?;
+        Ok(())
+    }
+
     pub fn attention(&self, key: &str, reason: &str) -> Result<()> {
         let db = self
             .connect(true)?
@@ -219,4 +264,28 @@ impl Store {
         let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
+}
+
+// Monotonic UI observations prevent a slow hook from reviving an older selection.
+fn accept_observation(
+    tx: &rusqlite::Transaction<'_>,
+    key: &str,
+    owner: &str,
+    tick: u64,
+) -> Result<bool> {
+    let previous = tx
+        .query_row(
+            "SELECT owner_key,tick FROM observations WHERE terminal_key=?1",
+            [key],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    if let Some((previous_owner, previous_tick)) = previous
+        && previous_owner == owner
+        && previous_tick.parse::<u64>()? >= tick
+    {
+        return Ok(false);
+    }
+    tx.execute("INSERT INTO observations (terminal_key,owner_key,tick) VALUES (?1,?2,?3) ON CONFLICT(terminal_key) DO UPDATE SET owner_key=excluded.owner_key,tick=excluded.tick", params![key,owner,tick.to_string()])?;
+    Ok(true)
 }

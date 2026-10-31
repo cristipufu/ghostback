@@ -452,3 +452,29 @@ fn old_manifest_without_distribution_still_supports_setup() {
     install::setup(&options).unwrap();
     assert!(options.home.join(".local/bin/ghostback").is_file());
 }
+
+#[test]
+fn runtime_bridge_setup_preserves_jsonc_and_modified_extensions() {
+    let (_root, options) = fixture();
+    let config = options.home.join(".config/opencode/tui.jsonc");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    fs::write(
+        &config,
+        "{\n// user comment\n\"plugin\":[\"my-plugin\",],\n\"theme\":\"dark\",\n}\n",
+    )
+    .unwrap();
+    install::setup(&options).unwrap();
+    let first = fs::read(&config).unwrap();
+    install::setup(&options).unwrap();
+    assert_eq!(fs::read(&config).unwrap(), first);
+    let pi = options.home.join(".pi/agent/extensions/ghostback.js");
+    fs::write(&pi, "user modified extension").unwrap();
+    assert!(install::setup(&options).is_err());
+    install::uninstall(&options.state, false).unwrap();
+    let after = fs::read_to_string(&config).unwrap();
+    assert!(after.contains("user comment"));
+    assert!(after.contains("my-plugin"));
+    assert!(!after.contains("opencode.mjs"));
+    assert_eq!(fs::read_to_string(pi).unwrap(), "user modified extension");
+    assert!(!options.state.join("integrations/opencode.mjs").exists());
+}

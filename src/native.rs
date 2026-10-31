@@ -29,6 +29,19 @@ impl Process {
                     .and_then(|s| crate::sessions::Agent::parse(s).ok())
             })
             .or_else(|| {
+                if self
+                    .executable
+                    .file_name()
+                    .is_none_or(|n| n != "node" && n != "bun")
+                {
+                    return None;
+                }
+                let script = self.argv.get(1)?;
+                let binary = crate::app::executable("pi")?;
+                (std::path::Path::new(script).canonicalize().ok()? == binary.canonicalize().ok()?)
+                    .then_some(crate::sessions::Agent::Pi)
+            })
+            .or_else(|| {
                 let path = std::env::var_os("PATH")?;
                 let actual = self.executable.canonicalize().ok()?;
                 [
@@ -36,6 +49,7 @@ impl Process {
                     crate::sessions::Agent::Codex,
                     crate::sessions::Agent::Claude,
                     crate::sessions::Agent::Grok,
+                    crate::sessions::Agent::Opencode,
                 ]
                 .into_iter()
                 .find(|agent| {
@@ -48,6 +62,18 @@ impl Process {
                         })
                 })
             })
+    }
+    pub fn agent_argv(&self, agent: crate::sessions::Agent) -> &[String] {
+        if agent == crate::sessions::Agent::Pi
+            && self.argv.first().is_some_and(|s| {
+                std::path::Path::new(s)
+                    .file_stem()
+                    .is_some_and(|n| n == "node")
+            })
+        {
+            return self.argv.get(1..).unwrap_or(&self.argv);
+        }
+        &self.argv
     }
     pub fn is_shell(&self) -> bool {
         matches!(

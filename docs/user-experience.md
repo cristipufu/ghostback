@@ -30,7 +30,7 @@ for bundled SQLite.
 ## Everyday use
 
 Open, split, reorder, and close Ghostty tabs normally. Start `claude`, `codex`,
-`agy`, or `grok` with their normal commands. Ghostback records exact conversation
+`agy`, `grok`, `pi`, or `opencode` with their normal commands. Ghostback records exact conversation
 and terminal UUIDs, directories, process identities, and supported launch options.
 Several conversations in one repository remain distinct.
 
@@ -59,7 +59,7 @@ connections through reboot, or automatically resubmit interrupted prompts.
 
 ## Resolving a failure
 
-Run `ghostback status`. It shows the phase, agent, conversation UUID, terminal
+Run `ghostback status`. It shows the phase, agent, conversation ID, terminal
 UUID, directory, and reason for an unresolved binding. `ghostback doctor` reports
 tool paths, Ghostty version, installation state, and whether the recorded helper
 process is still alive.
@@ -85,7 +85,10 @@ removed executable.
 ## Configuration and removal
 
 Setup supports zsh and bash, `ZDOTDIR` within the account home, Ghostty's normal
-macOS/XDG config locations, and `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `GROK_HOME`.
+macOS/XDG config locations, and `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `PI_CODING_AGENT_DIR`, and `OPENCODE_CONFIG_DIR`.
+Pi session-storage overrides are captured as exact file paths. OpenCode honors
+`XDG_CONFIG_HOME`; existing JSONC comments and other plugins are preserved.
+See [agent compatibility](agents.md) for bridge requirements and excluded modes.
 Use absolute configuration-root paths. Fish, remote SSH hosts, and native Linux
 recovery are outside this release's support scope.
 
@@ -97,7 +100,8 @@ into existing shell processes.
 
 For upgrades, run `brew update` and `brew upgrade ghostback`. Integrations keep
 the stable executable path, and the watcher replaces itself when the Homebrew
-link moves to a new version. Existing agents continue running.
+link moves to a new version. Rerun `ghostback setup` to refresh integrations,
+then restart Pi/OpenCode to load updated bridges. Existing agents continue running.
 
 ## Release acceptance scenario
 
@@ -108,7 +112,7 @@ Use a disposable account or VM for destructive qualification:
 2. Switch a conversation inside each agent; confirm `status` changes its exact ID.
 3. Exit one agent deliberately, close one tab, and reorder the others.
 4. Quit/reopen Ghostty, then repeat with an actual macOS restart and sleep/wake.
-5. Compare every restored terminal UUID and conversation UUID. Require zero
+5. Compare every restored terminal UUID and conversation ID. Require zero
    duplicate launches and no unintended resurrection.
 6. Repeat with delayed shell startup, a missing worktree, a moved CLI, expired
    authentication, Automation denial, and a helper crash during recovery.

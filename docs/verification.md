@@ -7,16 +7,16 @@ made.
 
 ## Automated checks
 
-- **94 Rust tests pass** across session storage, adapters, installation, and
+- **105 Rust tests pass** across session storage, adapters, installation, and
   lifecycle behavior.
 - Formatting and strict Clippy checks pass for all targets in the checkout,
   including the test and release-tool sources.
-- RustSec `cargo-audit` 0.22.2 scanned 69 locked dependencies against 1,395
+- RustSec `cargo-audit` 0.22.2 scanned 70 locked dependencies against 1,395
   advisories with warnings denied: no reported vulnerabilities or warnings.
 - The package contains a standalone native executable, MIT license, README,
-  contributor guide, documentation, third-party notices for 42 normal/build
+  contributor guide, documentation, third-party notices for 43 normal/build
   dependencies, and a SHA-256 checksum sidecar.
-- The Apple Silicon executable measures approximately **2.3 MB**, below the
+- The Apple Silicon executable measures **2,492,880 bytes (2.49 MB)**, below the
   enforced **10 MiB** limit. SQLite is compiled in. The dynamic dependencies are
   macOS system libraries (`libSystem` and `libiconv`).
 - The extracted package runs with an empty environment plus HOME and system
@@ -80,6 +80,32 @@ cargo build --release --locked --bin ghostback --example native_e2e
 ./target/release/examples/native_e2e ./target/release/ghostback claude bash
 ```
 
+The real-agent fixture also passed with **Pi 1.4.0** and **OpenCode 1.19.5**.
+It created isolated agent/config/data roots, seeded local sessions without a
+model call, and launched each actual CLI through generated shell recovery in
+its own Ghostty window. Both acknowledged the exact target and preserved the
+allowlisted launch options. Pi used a case-sensitive custom ID and a session
+path containing spaces and quotes. Its saved executable was verified as `pi`,
+not Node. OpenCode's fixture created a session through a temporary local API
+server, then resumed it in the normal local TUI. No credentials were configured
+and no prompts were submitted.
+
+```sh
+# Requires locally installed Pi/OpenCode and a running Ghostty.
+cargo build --release --locked
+cargo run --locked --example real_agents_e2e -- target/release/ghostback
+```
+
+Three Node development tests cover Pi lifecycle/ephemeral selection, OpenCode
+route selection/loading states, and bridge child-process errors, deduplication,
+ordering, and returning rapidly to a previous conversation. Node is not required
+by the Ghostback executable. Reproduce with `node --test tests/bridges.mjs`.
+
+Additional Rust coverage checks schema-v2 migration, non-UUID IDs, exact Pi file
+claims, bounded/mismatched/missing headers, FIFO and symlink replacement,
+late-observation rejection, watcher/acknowledgement races, JSONC preservation,
+and ownership-preserving bridge setup/uninstall.
+
 A separate fixture bootstrapped a uniquely named temporary launchd job using
 the generated helper plist. The background helper started and completed native
 capture, then the fixture removed its own job. Existing startup configuration
@@ -122,8 +148,9 @@ capture, installer, or restore implementations:
   worktrees, and CLI upgrades.
 - Exercise login-helper startup and macOS Automation permission grant, denial,
   and revocation from a clean account with delayed shell initialization.
-- Sign/notarize the distributed macOS executable and validate quarantine and
-  clean-machine installation on each architecture advertised for release.
+- Validate clean-machine installation on each architecture advertised for release.
+  Direct-download macOS archives need separate quarantine/signing qualification;
+  Homebrew formula installation does not require notarization.
 
 The complete acceptance scenario is in
 [user-experience.md](user-experience.md#release-acceptance-scenario).

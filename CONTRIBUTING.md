@@ -10,8 +10,12 @@ cloud service, or large runtime.
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
+node --test tests/bridges.mjs
 sh scripts/package.sh
 ```
+
+Node is used only for bridge development tests and by agents that already ship
+a JavaScript runtime; the Ghostback executable has no runtime dependency.
 
 Keep `Cargo.lock` current. The package script rejects binaries over 10 MiB per
 architecture. Test fixtures must use temporary homes and state directories.
