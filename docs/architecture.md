@@ -36,8 +36,20 @@ Ghostty source references checked at v1.4.0:
 | `capture` | Owned-process registries, hooks, and incremental log adapters |
 | `bridges` | Embedded agent-runtime bridges, configuration roots, comment-preserving TUI config edits |
 | `native` | macOS PID/birth identity, ancestry, executable and argv inspection |
-| `macos` | Read-only Ghostty inventory and the TTY-to-UUID bridge |
+| `macos` | Ghostty inventory, TTY-to-UUID bridge, and AppleScript focus/split/title adapter |
+| `applescript` | Native Ghostty AppleScript automation templates for focus, title overrides, and split/tab creation |
 | `app` | Capture watcher, shell readiness, and agent launch orchestration |
+| `herd` | Cross-harness Parent ↔ Child task/message store, turn waiting, and delegation pipeline |
+| `herd::launch` | Per-session MCP config injection, model/effort flag translation, and harness launch builders |
+| `herd::mcp` | Built-in stdio JSON-RPC 2.0 MCP server (`ghostback_delegate`, `ghostback_ask`, `ghostback_reply`, `ghostback_wait`, `ghostback_tasks`) |
+| `ui` | Terminal raw-mode guard, background refresh loop, and native Ghostty effect execution |
+| `ui::snapshot` | Fleet snapshot assembly, live process/tool classification, and zero-subprocess `.git/HEAD` inspection |
+| `ui::demo` | Offline sample fleet and Parent ⇄ Child task data for `ghostback ui --demo` |
+| `ui::canvas` | 2D truecolor cell buffer, synchronized ANSI renderer, and mouse hit-testing regions |
+| `ui::input` | ANSI CSI/SS3 keyboard sequence and SGR mouse event parser |
+| `ui::state` | Pure UI state machine, Sidebar tree grouping, and modal/view interaction handlers |
+| `ui::render` | Board, Fleet, Sidebar, and Inspector view rendering onto `Canvas` |
+| `ui::modals` | Spawn, Pair Child, Title Override, and Help modal rendering onto `Canvas` |
 | `distribution` | Executable ownership and stable Homebrew path detection |
 | `install` | Configuration planning, ownership, journaled setup, rollback, uninstall |
 | `files` | Bounded reads, atomic configuration writes, exclusive helper locks |

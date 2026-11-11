@@ -29,6 +29,14 @@ fn kind(agent: Agent, flag: &str) -> Kind {
             | "--log-file"
             | "--cd"
             | "-C"
+            | "--mcp-config"
+            | "--append-system-prompt"
+            | "--system-prompt"
+            | "--settings"
+            | "--rules"
+            | "--allowedTools"
+            | "--allowed-tools"
+            | "--allow"
     ) {
         return Kind::SkipValue;
     }
@@ -56,6 +64,7 @@ fn kind(agent: Agent, flag: &str) -> Kind {
         },
         Agent::Codex => match flag {
             "--profile" | "-p" | "--sandbox" | "--ask-for-approval" | "-a" => Kind::Value,
+            "-c" | "--config" => Kind::SkipValue,
             "--no-daemon"
             | "--no-alt-screen"
             | "--search"
@@ -233,8 +242,7 @@ pub fn interactive(agent: Agent, args: &[String]) -> bool {
             Agent::Claude | Agent::Agy => matches!(flag, "--print" | "-p" | "--prompt"),
             Agent::Grok => matches!(flag, "--single" | "-p" | "--prompt-file" | "--prompt-json"),
             Agent::Pi => matches!(flag, "--print" | "-p"),
-            Agent::Opencode => flag == "--prompt",
-            Agent::Codex => false,
+            Agent::Opencode | Agent::Codex => false,
         } {
             return false;
         }

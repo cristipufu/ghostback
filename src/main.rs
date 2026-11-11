@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use ghostback::sessions::{Agent, Session, Store, default_state_dir, hook_session};
-use ghostback::{Error, Result, app, install, invalid, macos, process};
+use ghostback::{Error, Result, app, herd, install, invalid, macos, process, ui};
 use serde_json::json;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -101,6 +101,113 @@ enum Commands {
         terminal_key: String,
         #[arg(long)]
         session_id: String,
+    },
+    /// Interactive Herdr-style fleet board, table, and sidebar for Ghostty terminals.
+    #[command(visible_aliases = ["board", "herd", "sidebar"])]
+    Ui {
+        /// Start in compact vertical sidebar mode.
+        #[arg(long)]
+        sidebar: bool,
+        /// Split the current Ghostty terminal on the left and dock the sidebar UI.
+        #[arg(long)]
+        dock: bool,
+        /// Render a single snapshot frame to stdout and exit.
+        #[arg(long)]
+        once: bool,
+        /// Populate an in-memory 8-agent demo fleet for previewing the UI.
+        #[arg(long)]
+        demo: bool,
+    },
+    /// Spawn a child/reviewer agent in another harness and coordinate until done.
+    #[command(visible_aliases = ["spawn-child", "pair"])]
+    Delegate {
+        /// Target child agent harness to spawn (codex, claude, agy, grok, opencode, pi).
+        #[arg(long, value_enum)]
+        to: Agent,
+        /// Role for the child agent (reviewer, worker, advisor).
+        #[arg(long, value_enum, default_value_t = herd::TaskRole::Reviewer)]
+        role: herd::TaskRole,
+        /// Optional model name or slug for the child agent (e.g. sol-6.1, gpt-5.1-codex, claude-opus-4-6).
+        #[arg(long, short = 'm')]
+        model: Option<String>,
+        /// Optional reasoning/thinking effort level (minimal, low, medium, high, xhigh, max).
+        #[arg(long, short = 'e')]
+        effort: Option<String>,
+        /// Optional extra CLI flags to forward to the child harness.
+        #[arg(long = "arg")]
+        extra_args: Vec<String>,
+        /// Task brief or review prompt for the child agent.
+        #[arg(long)]
+        prompt: Option<String>,
+        /// Optional parent terminal UUID (auto-detected from Ghostty TTY when omitted).
+        #[arg(long)]
+        parent: Option<String>,
+        /// Optional working directory (defaults to current directory).
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        /// Block until the child agent sends its reply via `ghostback reply`.
+        #[arg(long)]
+        wait: bool,
+        /// Maximum seconds to wait per CLI call when `--wait` is enabled (defaults to 90s to stay under 120s Bash tool timeouts).
+        #[arg(long, default_value_t = 90)]
+        timeout_secs: u64,
+        /// Skip spawning a native Ghostty surface (for headless/scripted testing).
+        #[arg(long, hide = true)]
+        no_spawn: bool,
+    },
+    /// Run the built-in stdio MCP server exposing Ghostback Herd cross-harness orchestration tools.
+    Mcp,
+    /// Send a follow-up revision or message from the parent agent to a child agent.
+    Ask {
+        /// Task ID (auto-detected from current parent terminal if omitted).
+        #[arg(long)]
+        task: Option<String>,
+        /// Block until the child agent responds via `ghostback reply`.
+        #[arg(long)]
+        wait: bool,
+        /// Maximum seconds to wait per CLI call when `--wait` is enabled.
+        #[arg(long, default_value_t = 90)]
+        timeout_secs: u64,
+        /// Message or revision summary to send to the child agent.
+        message: String,
+    },
+    /// Send a review verdict or task update from a child agent back to its parent.
+    Reply {
+        /// Task ID (auto-detected from GHOSTBACK_TASK_ID or current child terminal if omitted).
+        #[arg(long)]
+        task: Option<String>,
+        /// Verdict / status of this turn (changes-requested, approved, done, comment).
+        #[arg(long, value_enum, default_value_t = herd::ReplyVerdict::ChangesRequested)]
+        status: herd::ReplyVerdict,
+        /// Block until the parent agent sends the next round via `ghostback ask`.
+        #[arg(long)]
+        wait: bool,
+        /// Maximum seconds to wait per CLI call when `--wait` is enabled.
+        #[arg(long, default_value_t = 90)]
+        timeout_secs: u64,
+        /// Detailed findings, review feedback, or sign-off message.
+        message: String,
+    },
+    /// Continue waiting for a peer agent's response on an active Herd task without sending a duplicate message.
+    Wait {
+        /// Task ID (auto-detected from GHOSTBACK_TASK_ID or current terminal if omitted).
+        #[arg(long)]
+        task: Option<String>,
+        /// Which peer to wait for (`parent` or `child`; auto-detected when omitted).
+        #[arg(long = "for")]
+        r#for: Option<String>,
+        /// Maximum seconds to wait before returning a continuation prompt.
+        #[arg(long, default_value_t = 90)]
+        timeout_secs: u64,
+    },
+    /// Inspect cross-harness parent-child tasks and conversation rounds.
+    #[command(visible_alias = "messages")]
+    Tasks {
+        /// Optional task ID to inspect full message history.
+        #[arg(long)]
+        task: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -363,6 +470,230 @@ fn run(cli: Cli, out: &mut impl Write) -> Result<i32> {
                     "No matching conversation; nothing changed."
                 }
             )?;
+        }
+        Commands::Ui {
+            sidebar,
+            dock,
+            once,
+            demo,
+        } => {
+            ui::run(&store, sidebar, dock, once, demo, out)?;
+        }
+        Commands::Delegate {
+            to,
+            role,
+            model,
+            effort,
+            extra_args,
+            prompt,
+            parent,
+            cwd,
+            wait,
+            timeout_secs,
+            no_spawn,
+        } => {
+            let cwd = cwd.unwrap_or(std::env::current_dir()?);
+            let cwd = cwd.canonicalize().unwrap_or(cwd);
+            let exe = std::env::current_exe()?;
+            let raw_prompt = prompt.as_deref().unwrap_or("");
+            let (task, seq, _) = herd::delegate_task(
+                &store,
+                &herd::DelegateSpec {
+                    exe: &exe,
+                    parent_key: parent.as_deref(),
+                    parent_agent: None,
+                    target_uuid: None,
+                    child_agent: to,
+                    role,
+                    raw_prompt,
+                    options: herd::AgentLaunchOptions {
+                        model,
+                        effort,
+                        extra_args,
+                    },
+                    cwd: &cwd,
+                    no_spawn,
+                    sidebar_cmd: None,
+                },
+            )?;
+            if wait && !no_spawn {
+                let text = herd::wait_or_timeout_for_parent(
+                    &store,
+                    &exe,
+                    task,
+                    seq,
+                    Duration::from_secs(timeout_secs.max(1)),
+                )?;
+                write!(out, "{text}")?;
+            } else {
+                writeln!(
+                    out,
+                    "Spawned {} ({}) for task {} in terminal {}.\nWait for reply with:\n  ghostback wait --task {} --for child",
+                    to.name(),
+                    role.label(),
+                    task.task_id,
+                    task.child_terminal_key,
+                    task.task_id
+                )?;
+            }
+        }
+        Commands::Mcp => {
+            herd::run_mcp_server(&store, io::stdin().lock(), out)?;
+        }
+        Commands::Ask {
+            task,
+            wait,
+            timeout_secs,
+            message,
+        } => {
+            let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ghostback"));
+            let my_key = herd::resolve_caller_terminal_key(&store);
+            let task_id = herd::resolve_task_id(&store, task.as_deref(), my_key.as_deref(), false)?;
+            let (updated_task, seq) = herd::record_parent_message(&store, &task_id, &message)?;
+            if wait {
+                let text = herd::wait_or_timeout_for_parent(
+                    &store,
+                    &exe,
+                    updated_task,
+                    seq,
+                    Duration::from_secs(timeout_secs.max(1)),
+                )?;
+                write!(out, "{text}")?;
+            } else {
+                writeln!(
+                    out,
+                    "Sent round {} update to {} on task {}.",
+                    updated_task.round,
+                    updated_task.child_agent.name(),
+                    updated_task.task_id
+                )?;
+            }
+        }
+        Commands::Reply {
+            task,
+            status,
+            wait,
+            timeout_secs,
+            message,
+        } => {
+            let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ghostback"));
+            let my_key = herd::resolve_caller_terminal_key(&store);
+            let task_id = herd::resolve_task_id(&store, task.as_deref(), my_key.as_deref(), true)?;
+            let (updated_task, seq) = herd::record_child_reply(&store, &task_id, status, &message)?;
+            if wait && !status.is_terminal() {
+                let text = herd::wait_or_timeout_for_child(
+                    &store,
+                    &exe,
+                    updated_task,
+                    seq,
+                    Duration::from_secs(timeout_secs.max(1)),
+                )?;
+                write!(out, "{text}")?;
+            } else {
+                writeln!(
+                    out,
+                    "Recorded {} reply (round {}) for task {}.",
+                    status.as_str(),
+                    updated_task.round,
+                    updated_task.task_id
+                )?;
+            }
+        }
+        Commands::Wait {
+            task,
+            r#for,
+            timeout_secs,
+        } => {
+            let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ghostback"));
+            let expected = match r#for
+                .as_deref()
+                .map(|s| s.trim().to_ascii_lowercase())
+                .as_deref()
+            {
+                Some("parent") => "parent",
+                Some("child") => "child",
+                _ => {
+                    if std::env::var_os("GHOSTBACK_TASK_ID").is_some() {
+                        "parent"
+                    } else {
+                        "child"
+                    }
+                }
+            };
+            let is_child = expected == "parent";
+            let my_key = herd::resolve_caller_terminal_key(&store);
+            let task_id =
+                herd::resolve_task_id(&store, task.as_deref(), my_key.as_deref(), is_child)?;
+            let text = herd::wait_for_peer_formatted(
+                &store,
+                &exe,
+                &task_id,
+                expected,
+                Duration::from_secs(timeout_secs.max(1)),
+            )?;
+            write!(out, "{text}")?;
+        }
+        Commands::Tasks {
+            task,
+            json: as_json,
+        } => {
+            if let Some(task_id) = task {
+                let (t, msgs) = herd::get_task(&store, &task_id)?
+                    .ok_or_else(|| invalid(format!("unknown herd task: {task_id}")))?;
+                if as_json {
+                    writeln!(
+                        out,
+                        "{}",
+                        serde_json::to_string_pretty(&t.to_json(Some(&msgs)))?
+                    )?;
+                } else {
+                    writeln!(
+                        out,
+                        "Task {} · {} ⇄ {} ({}) · Round {} · {}",
+                        t.task_id,
+                        t.parent_agent.map(Agent::name).unwrap_or("parent"),
+                        t.child_agent.name(),
+                        t.role.label(),
+                        t.round,
+                        t.status.badge()
+                    )?;
+                    for m in msgs {
+                        let v = if m.verdict.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" [{}]", m.verdict)
+                        };
+                        writeln!(out, "  [R{} · {}{}] {}", m.round, m.sender_agent, v, m.body)?;
+                    }
+                }
+            } else {
+                let tasks = herd::list_tasks(&store)?;
+                if as_json {
+                    let rows: Vec<_> = tasks.iter().map(|t| t.to_json(None)).collect();
+                    writeln!(out, "{}", serde_json::to_string_pretty(&rows)?)?;
+                } else if tasks.is_empty() {
+                    writeln!(
+                        out,
+                        "No active Herd parent-child tasks. Spawn one with `ghostback delegate --to codex` or press `p` in `ghostback ui`."
+                    )?;
+                } else {
+                    for t in tasks {
+                        writeln!(
+                            out,
+                            "{:<10} {:<14} {} ⇄ {} ({}) · R{}\n  parent: {}\n  child:  {}\n  goal:   {}",
+                            t.task_id,
+                            t.status.as_str(),
+                            t.parent_agent.map(Agent::name).unwrap_or("parent"),
+                            t.child_agent.name(),
+                            t.role.label(),
+                            t.round,
+                            t.parent_terminal_key,
+                            t.child_terminal_key,
+                            t.goal
+                        )?;
+                    }
+                }
+            }
         }
     }
     out.flush()?;

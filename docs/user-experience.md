@@ -43,6 +43,29 @@ Exiting an agent returns to the original shell and retires that binding. Closing
 a terminal retires its binding after the watcher confirms its disappearance.
 A laptop waking from sleep retains live agents; they are not relaunched.
 
+## Fleet board, docked sidebar, and cross-harness collaboration
+
+Run `ghostback ui` (or `ghostback ui --dock` to split a 260 px live sidebar on
+the left of the active Ghostty tab) to inspect and control all open Ghostty
+terminals and captured sessions across Kanban Board (`1`), Fleet Table (`2`),
+and Sidebar (`3`) views.
+
+- **Right-pane focus and spawning**: Selecting a terminal in the docked sidebar
+  or pressing `n` to spawn a new agent places the target terminal in the right
+  pane while keeping the sidebar docked on the left.
+- **Per-session MCP injection**: Starting a parent agent from `ghostback ui` or
+  `ghostback ui --dock` automatically injects the built-in `ghostback mcp`
+  server and orchestration instructions for that session without modifying global
+  agent configuration files.
+- **Cross-harness Parent ↔ Child loops**: Press `p` on any terminal in
+  `ghostback ui` (or ask an MCP-enabled parent agent, e.g. *"use codex sol 6.1
+  xhigh for review"*, or run `ghostback delegate --to <agent> --role <role>
+  --model <model> --effort <effort> --wait "<prompt>"`) to spawn a child
+  Reviewer, Worker, or Advisor in another harness. The parent and child
+  coordinate across multi-round turns via `ghostback_delegate`, `ghostback_ask`,
+  `ghostback_reply`, and `ghostback_wait` (or their CLI counterparts) until the
+  child signs off with `approved` or `done`.
+
 ## Reopening Ghostty
 
 1. Ghostty restores its native windows, tabs, splits, and directories.

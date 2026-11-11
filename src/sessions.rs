@@ -348,6 +348,30 @@ impl Store {
                 CREATE TABLE IF NOT EXISTS health (
                     key TEXT PRIMARY KEY, value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS herd_tasks (
+                    task_id TEXT PRIMARY KEY,
+                    parent_terminal_key TEXT NOT NULL,
+                    child_terminal_key TEXT NOT NULL,
+                    parent_agent TEXT NOT NULL DEFAULT '',
+                    child_agent TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    goal TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    round INTEGER NOT NULL DEFAULT 1,
+                    cwd TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS herd_messages (
+                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    sender TEXT NOT NULL,
+                    sender_agent TEXT NOT NULL,
+                    verdict TEXT NOT NULL DEFAULT '',
+                    body TEXT NOT NULL,
+                    round INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL
+                );
                 ",
             )?;
             let has_file: bool = db.query_row(

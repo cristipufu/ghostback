@@ -247,7 +247,7 @@ pub fn scan(store: &Store, roots: &Roots, state: &mut WatchState) -> Result<usiz
             Err(_) => continue,
         };
         for _ in 0..4 {
-            if owner.name != "ghostback" {
+            if owner.name != "ghostback" && !owner.is_shell() {
                 break;
             }
             let children = capture::child_pids(owner.pid)?;
@@ -257,7 +257,7 @@ pub fn scan(store: &Store, roots: &Roots, state: &mut WatchState) -> Result<usiz
                 .filter(|p| p.agent().is_some() || p.name == "ghostback")
                 .collect();
             if matches.len() != 1 {
-                continue;
+                break;
             }
             owner = matches
                 .into_iter()
