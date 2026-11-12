@@ -597,33 +597,29 @@ impl AppState {
         Some(next)
     }
 
+    pub fn current_tab_spawn_target(&self) -> Option<Uuid> {
+        self.current_tab_right_pane_uuid()
+            .or_else(|| {
+                self.self_key
+                    .as_deref()
+                    .and_then(|k| Uuid::parse_str(k).ok())
+            })
+            .or_else(|| {
+                self.selected_item()
+                    .and_then(|item| Uuid::parse_str(&item.terminal_key).ok())
+            })
+    }
+
     pub fn open_spawn_modal(&mut self) {
         let cwd = self
             .selected_item()
             .map(|item| item.cwd.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
-        let in_sidebar = self.view == ViewMode::Sidebar;
-        let target = if in_sidebar {
-            self.current_tab_right_pane_uuid().or_else(|| {
-                self.selected_item()
-                    .and_then(|item| Uuid::parse_str(&item.terminal_key).ok())
-            })
-        } else if let Some(item) = self.selected_item() {
-            Uuid::parse_str(&item.terminal_key).ok()
-        } else {
-            self.self_key
-                .as_deref()
-                .and_then(|k| Uuid::parse_str(k).ok())
-        };
-        let disposition = if in_sidebar {
-            SpawnDisposition::NewTab
-        } else {
-            SpawnDisposition::SplitRight
-        };
+        let target = self.current_tab_spawn_target();
         self.modal = Modal::Spawn {
             cwd,
             target_terminal: target,
-            disposition,
+            disposition: SpawnDisposition::SplitRight,
             choice_index: 0,
         };
     }
@@ -791,7 +787,9 @@ impl AppState {
                     }
                     KeyEvent::Tab | KeyEvent::Right | KeyEvent::Char('l') => {
                         *disposition = match disposition {
-                            SpawnDisposition::SplitRight => SpawnDisposition::SplitDown,
+                            SpawnDisposition::SplitRight | SpawnDisposition::SidebarRight => {
+                                SpawnDisposition::SplitDown
+                            }
                             SpawnDisposition::SplitDown => SpawnDisposition::NewTab,
                             SpawnDisposition::NewTab => SpawnDisposition::NewWindow,
                             SpawnDisposition::NewWindow | SpawnDisposition::SplitLeft => {
@@ -801,7 +799,9 @@ impl AppState {
                     }
                     KeyEvent::BackTab | KeyEvent::Left | KeyEvent::Char('h') => {
                         *disposition = match disposition {
-                            SpawnDisposition::SplitRight => SpawnDisposition::NewWindow,
+                            SpawnDisposition::SplitRight | SpawnDisposition::SidebarRight => {
+                                SpawnDisposition::NewWindow
+                            }
                             SpawnDisposition::SplitDown => SpawnDisposition::SplitRight,
                             SpawnDisposition::NewTab => SpawnDisposition::SplitDown,
                             SpawnDisposition::NewWindow | SpawnDisposition::SplitLeft => {
@@ -961,16 +961,7 @@ impl AppState {
                 }
             }
             KeyEvent::Enter => {
-                if let Some(item) = self.selected_item() {
-                    if item.window_index.is_none() {
-                        self.set_toast(
-                            "Session is offline. Reopen its Ghostty tab or press 'c' to copy its resume command.",
-                            true,
-                        );
-                    } else if let Ok(uuid) = Uuid::parse_str(&item.terminal_key) {
-                        return UiEffect::Focus(uuid);
-                    }
-                }
+                return self.focus_or_resume_item(self.selected_index);
             }
             KeyEvent::Char('u' | ' ') => {
                 if let Some(idx) = self.jump_next_waiting() {
@@ -1101,26 +1092,15 @@ impl AppState {
                 self.selected_index = idx;
                 self.sync_selected_key();
                 self.last_click = Some((idx, Instant::now()));
-                if (self.view == ViewMode::Sidebar || is_double)
-                    && let Some(item) = self.snapshot.items.get(idx)
-                    && item.window_index.is_some()
-                    && let Ok(uuid) = Uuid::parse_str(&item.terminal_key)
-                {
-                    return UiEffect::Focus(uuid);
+                if self.view == ViewMode::Sidebar || is_double {
+                    return self.focus_or_resume_item(idx);
                 }
                 UiEffect::None
             }
             HitTarget::FocusCard(idx) => {
                 self.selected_index = idx;
                 self.sync_selected_key();
-                if let Some(item) = self.snapshot.items.get(idx) {
-                    if item.window_index.is_none() {
-                        self.set_toast("Session is offline; cannot focus in Ghostty", true);
-                    } else if let Ok(uuid) = Uuid::parse_str(&item.terminal_key) {
-                        return UiEffect::Focus(uuid);
-                    }
-                }
-                UiEffect::None
+                self.focus_or_resume_item(idx)
             }
             HitTarget::SetView(v) => {
                 self.auto_sidebar = false;
@@ -1241,20 +1221,36 @@ impl AppState {
         }
     }
 
+    fn focus_or_resume_item(&mut self, idx: usize) -> UiEffect {
+        let Some(item) = self.snapshot.items.get(idx) else {
+            return UiEffect::None;
+        };
+        if item.window_index.is_some()
+            && let Ok(uuid) = Uuid::parse_str(&item.terminal_key)
+        {
+            return UiEffect::Focus(uuid);
+        }
+        if let Some(resume_cmd) = item.resume_command.clone() {
+            let cwd = item.cwd.clone();
+            let target = self.current_tab_spawn_target();
+            let state_dir = self.state_dir.as_deref();
+            return UiEffect::Spawn {
+                target,
+                disposition: SpawnDisposition::SplitRight,
+                cwd,
+                command: Some(shell_launch_command(&resume_cmd, state_dir)),
+            };
+        }
+        self.set_toast("Session is offline and has no saved resume command.", true);
+        UiEffect::None
+    }
+
     fn quick_spawn(&self, disposition: SpawnDisposition) -> UiEffect {
         let cwd = self
             .selected_item()
             .map(|item| item.cwd.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
-        let target = if self.view == ViewMode::Sidebar {
-            self.current_tab_right_pane_uuid().or_else(|| {
-                self.selected_item()
-                    .and_then(|item| Uuid::parse_str(&item.terminal_key).ok())
-            })
-        } else {
-            self.selected_item()
-                .and_then(|item| Uuid::parse_str(&item.terminal_key).ok())
-        };
+        let target = self.current_tab_spawn_target();
         UiEffect::Spawn {
             target,
             disposition,
@@ -1286,7 +1282,7 @@ fn shell_launch_command(agent_bin: &str, explicit_state_dir: Option<&Path>) -> S
     }
     let shell = std::env::var("SHELL")
         .ok()
-        .filter(|s| !s.is_empty() && !s.chars().any(char::is_control))
+        .filter(|s| s.starts_with('/') && !s.chars().any(char::is_control))
         .unwrap_or_else(|| "/bin/zsh".into());
     format!(
         "{} -lic {}",

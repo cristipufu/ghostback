@@ -104,11 +104,11 @@ fn copy_to_clipboard(text: &str) -> Result<()> {
     Ok(())
 }
 
-fn sidebar_launch_command(store: &Store) -> Result<String> {
+pub fn sidebar_launch_command(store: &Store) -> Result<String> {
     let exe = std::env::current_exe()?;
     let state_q = shell_quote(&store.directory.to_string_lossy());
     Ok(format!(
-        "GHOSTBACK_STATE_DIR={state_q} {} --state-dir {state_q} ui --sidebar",
+        "{} --state-dir {state_q} ui --sidebar",
         shell_quote(&exe.to_string_lossy()),
     ))
 }
@@ -133,6 +133,10 @@ fn execute_effect(
             let _ = tx.send(scan);
         }
     };
+    let self_uuid = state
+        .self_key
+        .as_deref()
+        .and_then(|k| Uuid::parse_str(k).ok());
     let in_docked_sidebar = state.view == ViewMode::Sidebar && state.self_key.is_some();
     match effect {
         UiEffect::None => {}
@@ -153,7 +157,7 @@ fn execute_effect(
             }
         }
         UiEffect::Focus(uuid) => {
-            if in_docked_sidebar {
+            if state.self_key.is_some() {
                 let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
                 let sidebar_cmd = sidebar_launch_command(store).unwrap_or_default();
                 match macos::focus_from_sidebar(uuid, state.self_key.as_deref(), &cwd, &sidebar_cmd)
@@ -162,6 +166,8 @@ fn execute_effect(
                         if moved_tab {
                             state.should_quit = true;
                         } else {
+                            state.view = ViewMode::Sidebar;
+                            state.auto_sidebar = true;
                             state.set_toast(
                                 format!("Showing {} in right pane", short_key(&uuid.to_string())),
                                 false,
@@ -213,13 +219,31 @@ fn execute_effect(
                     Err(e) => state.set_toast(format!("Spawn failed: {e}"), true),
                 }
             } else {
-                match macos::spawn_surface(target, disposition, &cwd, command.as_deref()) {
+                let splitting_self = target.is_some() && target == self_uuid;
+                let effective_disposition =
+                    if splitting_self && disposition == SpawnDisposition::SplitRight {
+                        SpawnDisposition::SidebarRight
+                    } else {
+                        disposition
+                    };
+                match macos::spawn_surface(target, effective_disposition, &cwd, command.as_deref())
+                {
                     Ok(new_id) => {
+                        if matches!(
+                            effective_disposition,
+                            SpawnDisposition::SplitRight
+                                | SpawnDisposition::SidebarRight
+                                | SpawnDisposition::SplitDown
+                        ) {
+                            state.view = ViewMode::Sidebar;
+                            state.auto_sidebar = true;
+                        }
+                        state.selected_key = Some(new_id.to_string());
                         request_refresh(false);
                         state.set_toast(
                             format!(
                                 "Spawned {} ({})",
-                                disposition.label(),
+                                effective_disposition.label(),
                                 short_key(&new_id.to_string())
                             ),
                             false,
@@ -239,10 +263,11 @@ fn execute_effect(
         } => {
             let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ghostback"));
             let target_uuid = state
-                .current_tab_right_pane_uuid()
+                .current_tab_spawn_target()
                 .or_else(|| Uuid::parse_str(&parent_key).ok());
+            let splitting_self = target_uuid.is_some() && target_uuid == self_uuid;
             let sidebar_cmd =
-                in_docked_sidebar.then(|| sidebar_launch_command(store).unwrap_or_default());
+                splitting_self.then(|| sidebar_launch_command(store).unwrap_or_default());
             match herd::delegate_task(
                 store,
                 &DelegateSpec {
@@ -259,26 +284,27 @@ fn execute_effect(
                     sidebar_cmd: sidebar_cmd.as_deref(),
                 },
             ) {
-                Ok((task, _, _)) => {
+                Ok((task, _, child_uuid)) => {
                     let follow_up = format!(
                         "ghostback ask --task {} --wait \"Please review my latest updates\"",
                         task.task_id
                     );
                     let _ = copy_to_clipboard(&follow_up);
-                    if in_docked_sidebar {
-                        state.should_quit = true;
-                    } else {
-                        request_refresh(false);
-                        state.set_toast(
-                            format!(
-                                "Paired {} ({}) as #{}. Copied `ghostback ask` command to clipboard.",
-                                child_agent.name().to_uppercase(),
-                                role.label(),
-                                task.task_id
-                            ),
-                            false,
-                        );
+                    state.view = ViewMode::Sidebar;
+                    state.auto_sidebar = true;
+                    if let Some(cid) = child_uuid {
+                        state.selected_key = Some(cid.to_string());
                     }
+                    request_refresh(false);
+                    state.set_toast(
+                        format!(
+                            "Paired {} ({}) as #{}. Copied `ghostback ask` command to clipboard.",
+                            child_agent.name().to_uppercase(),
+                            role.label(),
+                            task.task_id
+                        ),
+                        false,
+                    );
                 }
                 Err(e) => state.set_toast(format!("Failed to pair child agent: {e}"), true),
             }

@@ -470,7 +470,7 @@ pub fn per_session_mcp_args_and_env_with_options(
 fn user_shell() -> String {
     std::env::var("SHELL")
         .ok()
-        .filter(|s| !s.is_empty() && !s.chars().any(char::is_control))
+        .filter(|s| s.starts_with('/') && !s.chars().any(char::is_control))
         .unwrap_or_else(|| "/bin/zsh".into())
 }
 

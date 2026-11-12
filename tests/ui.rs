@@ -442,8 +442,8 @@ fn sidebar_right_pane_badge_single_click_focus_and_safe_spawn_defaults() {
     let eff = state.apply_hit(HitTarget::SelectCard(grok_idx));
     assert!(matches!(eff, UiEffect::Focus(id) if id == grok_id));
 
-    // With grok (in t2) selected, opening the Spawn modal defaults to NewTab (Right Pane)
-    // and targets the current tab's right pane (right_id in t3), never splitting t2!
+    // With grok (in t2) selected, opening the Spawn modal defaults to SplitRight
+    // and targets the current tab's right pane (right_id in t3), never splitting t2 or opening a new tab!
     state.handle_key(KeyEvent::Char('n'), 44);
     state.handle_key(KeyEvent::Char('7'), 44); // Select Grok
     let spawn_eff = state.handle_key(KeyEvent::Enter, 44);
@@ -454,7 +454,7 @@ fn sidebar_right_pane_badge_single_click_focus_and_safe_spawn_defaults() {
             cwd,
             command,
         } => {
-            assert_eq!(disposition, SpawnDisposition::NewTab);
+            assert_eq!(disposition, SpawnDisposition::SplitRight);
             assert_eq!(target, Some(right_id));
             assert_eq!(cwd, grok_dir);
             assert!(command.unwrap().contains("grok"));
@@ -1317,9 +1317,22 @@ fn launch_commands_with_multiline_instructions_and_prompts_pass_macos_validation
     } = state.handle_key(KeyEvent::Enter, 120)
     {
         assert!(cmd.contains(&state_dir.to_string_lossy().into_owned()));
+        ghostback::macos::validate_launch_inputs(root.path(), Some(&cmd)).unwrap();
     } else {
         panic!("Expected UiEffect::Spawn with command");
     }
+
+    // Sidebar launch command must start with an executable path (never a VAR=VAL shell prefix)
+    let store = Store::new(state_dir).unwrap();
+    let sidebar_cmd = ghostback::ui::sidebar_launch_command(&store).unwrap();
+    ghostback::macos::validate_launch_inputs(root.path(), Some(&sidebar_cmd)).unwrap();
+    assert!(
+        ghostback::macos::validate_launch_inputs(
+            root.path(),
+            Some("GHOSTBACK_STATE_DIR='/tmp/state' '/usr/local/bin/ghostback' ui --sidebar")
+        )
+        .is_err()
+    );
 }
 
 #[test]

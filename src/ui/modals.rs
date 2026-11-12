@@ -75,9 +75,9 @@ fn render_spawn_modal(
     let narrow = mw < 58;
     let disp_choices: [(SpawnDisposition, &str); 4] = if narrow {
         [
-            (SpawnDisposition::NewTab, "◨ Right"),
-            (SpawnDisposition::SplitRight, "◫ Split"),
+            (SpawnDisposition::SplitRight, "◨ Right"),
             (SpawnDisposition::SplitDown, "⬒ Down"),
+            (SpawnDisposition::NewTab, "❐ Tab"),
             (SpawnDisposition::NewWindow, "❐ Win"),
         ]
     } else {
@@ -90,7 +90,7 @@ fn render_spawn_modal(
                 SpawnDisposition::SplitDown,
                 SpawnDisposition::SplitDown.label(),
             ),
-            (SpawnDisposition::NewTab, "◨ Right / Tab"),
+            (SpawnDisposition::NewTab, SpawnDisposition::NewTab.label()),
             (
                 SpawnDisposition::NewWindow,
                 SpawnDisposition::NewWindow.label(),

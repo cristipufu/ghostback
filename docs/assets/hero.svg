@@ -62,7 +62,7 @@
     <!-- Prompt breadcrumb above title -->
     <g transform="translate(126, 20)" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" font-weight="700">
       <rect x="0" y="-15" width="104" height="22" rx="5" fill="#1e1b4b" stroke="#4f46e5" stroke-width="1"/>
-      <text x="52" y="0" text-anchor="middle" fill="#a5b4fc">HERD v0.3.0</text>
+      <text x="52" y="0" text-anchor="middle" fill="#a5b4fc">HERD v0.3.1</text>
       <text x="116" y="0" fill="#64748b">RUST · GHOSTTY 1.4+ · SQLITE WAL · MCP</text>
     </g>
 

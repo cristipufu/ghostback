@@ -1053,16 +1053,13 @@ pub fn delegate_task(
         let target_uuid = spec
             .target_uuid
             .or_else(|| uuid::Uuid::parse_str(&parent_key).ok());
-        let spawned_uuid = if let Some(sidebar_cmd) = spec.sidebar_cmd {
-            macos::spawn_from_sidebar(target_uuid, spec.cwd, Some(&launch_cmd), sidebar_cmd)?
+        let disposition = if spec.sidebar_cmd.is_some() {
+            macos::SpawnDisposition::SidebarRight
         } else {
-            macos::spawn_surface(
-                target_uuid,
-                macos::SpawnDisposition::NewTab,
-                spec.cwd,
-                Some(&launch_cmd),
-            )?
+            macos::SpawnDisposition::SplitRight
         };
+        let spawned_uuid =
+            macos::spawn_surface(target_uuid, disposition, spec.cwd, Some(&launch_cmd))?;
         let title = format_child_terminal_title(spec.role, spec.child_agent, &task_id);
         let _ = macos::set_terminal_title(spawned_uuid, &title);
         (spawned_uuid.to_string(), Some(spawned_uuid))

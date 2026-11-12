@@ -106,6 +106,12 @@ pub const SPAWN_SCRIPT: &str = r#"on run argv
                 set newTrm to split (terminal id trmId) direction right with configuration cfg
                 focus newTrm
                 return id of newTrm as text
+            else if mode is "sidebar_right" then
+                set newTrm to split (terminal id trmId) direction right with configuration cfg
+                set name override of (terminal id trmId) to "◈ HERD"
+                perform action "resize_split:left,260" on (terminal id trmId)
+                focus newTrm
+                return id of newTrm as text
             else if mode is "down" then
                 set newTrm to split (terminal id trmId) direction down with configuration cfg
                 focus newTrm

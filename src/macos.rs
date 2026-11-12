@@ -34,6 +34,7 @@ pub struct Terminal {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpawnDisposition {
     SplitRight,
+    SidebarRight,
     SplitDown,
     SplitLeft,
     NewTab,
@@ -44,6 +45,7 @@ impl SpawnDisposition {
     pub fn as_mode(self) -> &'static str {
         match self {
             Self::SplitRight => "right",
+            Self::SidebarRight => "sidebar_right",
             Self::SplitDown => "down",
             Self::SplitLeft => "left",
             Self::NewTab => "tab",
@@ -53,7 +55,7 @@ impl SpawnDisposition {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::SplitRight => "Split Right",
+            Self::SplitRight | Self::SidebarRight => "Split Right",
             Self::SplitDown => "Split Down",
             Self::SplitLeft => "Sidebar Left",
             Self::NewTab => "New Tab",
@@ -234,6 +236,14 @@ fn validate_command(command: Option<&str>) -> Result<&str> {
             .any(|c| c.is_control() && !matches!(c, '\n' | '\t'))
     {
         return Err(invalid("launch command contains invalid characters"));
+    }
+    if let Some(first_token) = cmd_str.split_whitespace().next() {
+        let unquoted = first_token.trim_matches(['\'', '"']);
+        if unquoted.contains('=') && !unquoted.starts_with('/') {
+            return Err(invalid(
+                "Ghostty surface command must start with an executable, not a shell VAR=VAL prefix",
+            ));
+        }
     }
     Ok(cmd_str)
 }
