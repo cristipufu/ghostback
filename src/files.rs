@@ -40,6 +40,17 @@ impl Lock {
         Err(invalid("file locking currently requires a Unix platform"))
     }
 }
+#[cfg(unix)]
+impl Drop for Lock {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+        // SAFETY: explicit unlock before closing ensures concurrent fork() children
+        // in other threads cannot briefly keep the flock held past Drop.
+        unsafe {
+            libc::flock(self._file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
 
 pub fn read(path: &Path, limit: u64) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();

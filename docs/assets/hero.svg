@@ -1,12 +1,184 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title desc">
-  <title id="title">Ghostback</title><desc id="desc">Your coding sessions, right where you left them.</desc>
-  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#10151e"/><stop offset="1" stop-color="#172d33"/></linearGradient><linearGradient id="accent"><stop stop-color="#90f0d4"/><stop offset="1" stop-color="#8ebaff"/></linearGradient></defs>
-  <rect width="1200" height="340" rx="22" fill="url(#bg)"/>
-  <g fill="none" stroke="#90f0d4" opacity=".07"><path d="M0 68h1200M0 136h1200M0 204h1200M0 272h1200M120 0v340M240 0v340M360 0v340M480 0v340M600 0v340M720 0v340M840 0v340M960 0v340M1080 0v340"/></g>
-  <g transform="translate(173 2)">
-  <g transform="translate(70 88)"><rect width="160" height="160" rx="32" fill="#112822" stroke="#90f0d4" stroke-opacity=".3"/><path d="M44 106V72a36 36 0 0 1 72 0v51l-17-10-18 10-18-10-19 10z" fill="url(#accent)"/><circle cx="68" cy="75" r="5" fill="#142525"/><circle cx="94" cy="75" r="5" fill="#142525"/><path d="M64 96h19" stroke="#142525" stroke-width="6" stroke-linecap="round"/></g>
-  <text x="270" y="151" fill="#f1f6f8" font-size="70" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-weight="700" letter-spacing="-2">Ghostback</text>
-  <text x="274" y="198" textLength="510" lengthAdjust="spacingAndGlyphs" fill="#b9cbd0" font-size="25" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">Your coding sessions, right where you left them.</text>
-  <g font-family="ui-monospace,SFMono-Regular,Consolas,monospace" font-size="15" fill="#90f0d4"><text x="275" y="246">GHOSTTY</text><text x="390" y="246" fill="#5a777e">/</text><text x="420" y="246">NATIVE TABS</text><text x="565" y="246" fill="#5a777e">/</text><text x="595" y="246">EXACT CONVERSATIONS</text></g>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="hero-title hero-desc">
+  <title id="hero-title">Ghostback — Native Ghostty Session Recovery, Fleet TUI &amp; Multi-Agent Orchestration</title>
+  <desc id="hero-desc">Recover exact coding-agent conversations, dock a live fleet sidebar, and orchestrate parent-child reviews across Claude, Codex, agy, OpenCode, Pi, and Grok.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#060911"/>
+      <stop offset="50%" stop-color="#0b101d"/>
+      <stop offset="100%" stop-color="#10182b"/>
+    </linearGradient>
+    <linearGradient id="card-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#090d16"/>
+    </linearGradient>
+    <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="50%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <linearGradient id="border-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.65"/>
+      <stop offset="50%" stop-color="#0ea5e9" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0.55"/>
+    </linearGradient>
+    <radialGradient id="glow-orb" cx="0.78" cy="0.5" r="0.45">
+      <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.22"/>
+      <stop offset="60%" stop-color="#0ea5e9" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#060911" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1200" height="360" rx="20" fill="url(#bg)" stroke="#1e293b" stroke-width="2"/>
+  <rect width="1200" height="360" rx="20" fill="url(#glow-orb)"/>
+
+  <!-- Subtle Terminal Matrix Grid -->
+  <g stroke="#1e293b" stroke-width="1" opacity="0.35">
+    <path d="M0 60h1200M0 120h1200M0 180h1200M0 240h1200M0 300h1200"/>
+    <path d="M120 0v360M240 0v360M360 0v360M480 0v360M600 0v360M720 0v360M840 0v360M960 0v360M1080 0v360"/>
+  </g>
+
+  <!-- LEFT COLUMN (x=48..656, width=608px) -->
+  <g transform="translate(48, 42)">
+    <!-- Terminal Icon Badge (108x108) -->
+    <g transform="translate(0, 6)">
+      <rect width="108" height="108" rx="24" fill="#0d1424" stroke="url(#border-grad)" stroke-width="2.5"/>
+      <line x1="2" y1="26" x2="106" y2="26" stroke="#1e293b" stroke-width="1.5"/>
+      <circle cx="18" cy="14" r="3.5" fill="#ff5f57"/>
+      <circle cx="29" cy="14" r="3.5" fill="#febc2e"/>
+      <circle cx="40" cy="14" r="3.5" fill="#28c840"/>
+      <!-- Mini sidebar strip -->
+      <rect x="10" y="34" width="22" height="62" rx="4" fill="#090d16" stroke="#312e81" stroke-width="1.2"/>
+      <rect x="14" y="40" width="14" height="4" rx="2" fill="#34d399"/>
+      <rect x="14" y="50" width="12" height="4" rx="2" fill="#818cf8"/>
+      <rect x="14" y="60" width="14" height="4" rx="2" fill="#f59e0b"/>
+      <!-- Terminal Ghost + >_ -->
+      <path d="M 48 56 C 48 39, 88 39, 88 56 L 88 90 L 80 83 L 72 90 L 68 85 L 64 90 L 56 83 L 48 90 Z"
+            fill="url(#brand-grad)" fill-opacity="0.18" stroke="url(#brand-grad)" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M 56 57 L 63 62 L 56 67" fill="none" stroke="#34d399" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="68" y="64" width="11" height="3.2" rx="1.5" fill="#38bdf8"/>
+    </g>
+
+    <!-- Prompt breadcrumb above title -->
+    <g transform="translate(126, 20)" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" font-weight="700">
+      <rect x="0" y="-15" width="104" height="22" rx="5" fill="#1e1b4b" stroke="#4f46e5" stroke-width="1"/>
+      <text x="52" y="0" text-anchor="middle" fill="#a5b4fc">HERD v0.3.0</text>
+      <text x="116" y="0" fill="#64748b">RUST · GHOSTTY 1.4+ · SQLITE WAL · MCP</text>
+    </g>
+
+    <!-- Main Wordmark -->
+    <text x="124" y="84" fill="#f8fafc" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="56" font-weight="800" letter-spacing="-1.5">ghostback</text>
+    <rect x="434" y="42" width="20" height="42" rx="3" fill="url(#brand-grad)" opacity="0.85"/>
+
+    <!-- Technical Value Prop (fits cleanly with wide margin before right card) -->
+    <text x="126" y="114" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif" font-size="14.5" font-weight="500">
+      Session recovery, docked fleet TUI &amp; cross-agent MCP for Ghostty.
+    </text>
+
+    <!-- 3 Feature Pillars Row (generous pill widths, centered text) -->
+    <g transform="translate(0, 152)" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" font-weight="700">
+      <rect x="0" y="0" width="194" height="34" rx="7" fill="#0d1726" stroke="#1e3a5f" stroke-width="1.2"/>
+      <circle cx="16" cy="17" r="4" fill="#34d399"/>
+      <text x="104" y="21" text-anchor="middle" fill="#e2e8f0">Exact UUID Recovery</text>
+
+      <rect x="206" y="0" width="194" height="34" rx="7" fill="#0d1726" stroke="#1e3a5f" stroke-width="1.2"/>
+      <circle cx="222" cy="17" r="4" fill="#818cf8"/>
+      <text x="310" y="21" text-anchor="middle" fill="#e2e8f0">Docked HERD Sidebar</text>
+
+      <rect x="412" y="0" width="194" height="34" rx="7" fill="#0d1726" stroke="#1e3a5f" stroke-width="1.2"/>
+      <circle cx="428" cy="17" r="4" fill="#38bdf8"/>
+      <text x="516" y="21" text-anchor="middle" fill="#e2e8f0">Parent-Child MCP Bus</text>
+    </g>
+
+    <!-- Supported Agent Harnesses Strip -->
+    <g transform="translate(0, 210)" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" font-weight="700">
+      <text x="0" y="19" fill="#64748b">AGENTS:</text>
+
+      <rect x="68" y="2" width="80" height="26" rx="6" fill="#2b1911" stroke="#f97316" stroke-width="1"/>
+      <text x="108" y="19" text-anchor="middle" fill="#fdba74">CLAUDE</text>
+
+      <rect x="156" y="2" width="74" height="26" rx="6" fill="#0d2818" stroke="#10b981" stroke-width="1"/>
+      <text x="193" y="19" text-anchor="middle" fill="#6ee7b7">CODEX</text>
+
+      <rect x="238" y="2" width="60" height="26" rx="6" fill="#1e1b4b" stroke="#6366f1" stroke-width="1"/>
+      <text x="268" y="19" text-anchor="middle" fill="#a5b4fc">AGY</text>
+
+      <rect x="306" y="2" width="96" height="26" rx="6" fill="#0c2536" stroke="#0ea5e9" stroke-width="1"/>
+      <text x="354" y="19" text-anchor="middle" fill="#7dd3fc">OPENCODE</text>
+
+      <rect x="410" y="2" width="54" height="26" rx="6" fill="#2e1025" stroke="#ec4899" stroke-width="1"/>
+      <text x="437" y="19" text-anchor="middle" fill="#f9a8d4">PI</text>
+
+      <rect x="472" y="2" width="68" height="26" rx="6" fill="#1f2430" stroke="#94a3b8" stroke-width="1"/>
+      <text x="506" y="19" text-anchor="middle" fill="#e2e8f0">GROK</text>
+    </g>
+  </g>
+
+  <!-- RIGHT: Mini Stylized Ghostty Docked Terminal Window Illustration (x=688, width=464) -->
+  <g transform="translate(688, 36)" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">
+    <rect width="464" height="288" rx="14" fill="url(#card-bg)" stroke="url(#border-grad)" stroke-width="2"/>
+    <!-- Window Chrome -->
+    <line x1="0" y1="32" x2="464" y2="32" stroke="#1e293b" stroke-width="1.5"/>
+    <circle cx="18" cy="16" r="4.5" fill="#ff5f57"/>
+    <circle cx="32" cy="16" r="4.5" fill="#febc2e"/>
+    <circle cx="46" cy="16" r="4.5" fill="#28c840"/>
+    <text x="64" y="20" fill="#94a3b8" font-size="11" font-weight="600">ghostback --dock · W1·T1</text>
+    <rect x="352" y="7" width="100" height="18" rx="4" fill="#1e1b4b" stroke="#4f46e5" stroke-width="0.8"/>
+    <text x="402" y="19" text-anchor="middle" fill="#a5b4fc" font-size="9.5" font-weight="700">MCP INJECTED</text>
+
+    <!-- Left Split: HERD Sidebar (width=158) -->
+    <rect x="10" y="42" width="158" height="236" rx="7" fill="#0b101d" stroke="#26334d" stroke-width="1.2"/>
+    <rect x="16" y="49" width="58" height="16" rx="4" fill="#4f46e5"/>
+    <text x="45" y="60" text-anchor="middle" fill="#ffffff" font-size="9" font-weight="700">HERD</text>
+    <text x="82" y="60" fill="#34d399" font-size="9" font-weight="700">2 work · 3 wait</text>
+
+    <!-- Parent Card in Sidebar -->
+    <rect x="15" y="72" width="148" height="36" rx="4" fill="#17223b" stroke="#6366f1" stroke-width="1"/>
+    <rect x="15" y="72" width="3" height="36" fill="#6366f1"/>
+    <text x="23" y="86" fill="#fdba74" font-size="9.5" font-weight="700">CLAUDE · ghostback</text>
+    <text x="23" y="100" fill="#94a3b8" font-size="8.5">feat/herdr-ui · RIGHT</text>
+
+    <!-- Indented Child Card in Sidebar -->
+    <rect x="15" y="112" width="148" height="36" rx="4" fill="#11192c" stroke="#1e293b" stroke-width="1"/>
+    <rect x="15" y="112" width="3" height="36" fill="#c084fc"/>
+    <path d="M 24 118 L 24 124 L 31 124" fill="none" stroke="#c084fc" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="35" y="126" fill="#c084fc" font-size="9.5" font-weight="700">REV·CODEX R2</text>
+    <text x="23" y="140" fill="#34d399" font-size="9" font-weight="700">APPROVED · LGTM</text>
+
+    <!-- Waiting Cards in Sidebar -->
+    <rect x="15" y="154" width="148" height="32" rx="4" fill="#0f1626"/>
+    <rect x="15" y="154" width="3" height="32" fill="#f59e0b"/>
+    <text x="23" y="168" fill="#a5b4fc" font-size="9" font-weight="700">AGY · ghostback</text>
+    <text x="23" y="180" fill="#64748b" font-size="8.5">waiting for input</text>
+
+    <rect x="15" y="190" width="148" height="32" rx="4" fill="#0f1626"/>
+    <rect x="15" y="190" width="3" height="32" fill="#f59e0b"/>
+    <text x="23" y="204" fill="#7dd3fc" font-size="9" font-weight="700">OPENCODE · router</text>
+    <text x="23" y="216" fill="#64748b" font-size="8.5">waiting for input</text>
+
+    <!-- Mini Inspector in Sidebar -->
+    <rect x="15" y="230" width="148" height="40" rx="4" fill="#090d16" stroke="#1e293b" stroke-width="1"/>
+    <text x="22" y="245" fill="#c084fc" font-size="9" font-weight="700">CLAUDE &lt;-&gt; CODEX (R2)</text>
+    <text x="22" y="259" fill="#34d399" font-size="8.5">#t-9a4e12b0 · APPROVED</text>
+
+    <!-- Right Upper Split: Parent Agent (x=176, width=278) -->
+    <rect x="176" y="42" width="278" height="114" rx="7" fill="#0b101d" stroke="#4f46e5" stroke-width="1.5"/>
+    <rect x="177" y="43" width="276" height="20" rx="6" fill="#131c31"/>
+    <text x="186" y="57" fill="#f8fafc" font-size="9.5" font-weight="700">CLAUDE CODE · Parent (W1·T1·S2)</text>
+    <text x="186" y="76" fill="#e2e8f0" font-size="9">&gt; use codex gpt-5.4 xhigh for review</text>
+    <text x="186" y="94" fill="#60a5fa" font-size="9" font-weight="700">ghostback_delegate(codex, xhigh)</text>
+    <text x="186" y="110" fill="#f87171" font-size="8.5">R1 [changes_requested]: Guard cmd</text>
+    <text x="186" y="126" fill="#60a5fa" font-size="9" font-weight="700">ghostback_ask(#t-9a4e12b0, Round 2)</text>
+    <text x="186" y="144" fill="#34d399" font-size="9" font-weight="700">R2 [approved]: LGTM, ready to ship.</text>
+
+    <!-- Right Lower Split: Child Reviewer (x=176, width=278) -->
+    <rect x="176" y="164" width="278" height="114" rx="7" fill="#0b101d" stroke="#10b981" stroke-width="1.5"/>
+    <rect x="177" y="165" width="276" height="20" rx="6" fill="#0d2818"/>
+    <text x="186" y="179" fill="#6ee7b7" font-size="9.5" font-weight="700">CODEX · Reviewer (gpt-5.4 · xhigh)</text>
+    <text x="186" y="198" fill="#94a3b8" font-size="8.5">$ codex -m gpt-5.4 -c effort="xhigh"</text>
+    <text x="186" y="214" fill="#cbd5e1" font-size="8.5">Checked git diff src/macos.rs</text>
+    <text x="186" y="232" fill="#34d399" font-size="9" font-weight="700">ghostback_reply(verdict="approved")</text>
+    <text x="186" y="250" fill="#a7f3d0" font-size="8.5">"Sidebar focus &amp; split invariants OK"</text>
+    <text x="186" y="266" fill="#34d399" font-size="8.5" font-weight="700">Delivered to parent CLAUDE</text>
   </g>
 </svg>

@@ -7,8 +7,8 @@ made.
 
 ## Automated checks
 
-- **107 Rust tests pass** across session storage, adapters, installation, and
-  lifecycle behavior.
+- **120 Rust tests pass** across session storage, adapters, installation,
+  lifecycle behavior, interactive Herd UI, and cross-harness MCP orchestration.
 - Formatting and strict Clippy checks pass for all targets in the checkout,
   including the test and release-tool sources.
 - RustSec `cargo-audit` 0.22.2 scanned 70 locked dependencies against 1,395
@@ -16,7 +16,7 @@ made.
 - The package contains a standalone native executable, MIT license, README,
   contributor guide, documentation, third-party notices for 43 normal/build
   dependencies, and a SHA-256 checksum sidecar.
-- The Apple Silicon executable measures approximately **2.5 MB**, below the
+- The Apple Silicon executable measures approximately **2.9 MB**, below the
   enforced **10 MiB** limit. SQLite is compiled in. The dynamic dependencies are
   macOS system libraries (`libSystem` and `libiconv`).
 - The extracted package runs with an empty environment plus HOME and system
@@ -136,6 +136,7 @@ restart macOS.
 | Uninstall | Managed blocks removed, user hooks and additions retained, modified owned executable preserved, malformed configuration blocks partial removal |
 | Subprocesses | Deadlines, bounded output, inherited pipes held open by descendants, owned-child cleanup, downstream broken pipes |
 | Paths/input | Missing directories retained, invalid/non-UTF-8 paths diagnosed, quoted paths preserved, oversized/malformed hook payload rejection |
+| Herd UI & MCP | Board/Fleet/Sidebar rendering, SGR mouse hit-testing, truncated CSI input safety, per-session MCP injection, model/effort flag translation, Content-Length & JSONL MCP framing, and multi-round Codex ⇄ Grok reviewer ping-pong simulation |
 
 ## Release qualification still required
 
