@@ -6,7 +6,7 @@ use crate::macos::SIDEBAR_PANE_TITLE;
 use super::canvas::{Canvas, HitTarget, Rect, Rgb, Style, activity_colors, agent_colors, palette};
 use super::modals::render_active_modal;
 use super::snapshot::{Activity, FleetItem, short_key};
-use super::state::{AppState, Modal, SidebarGroup, SidebarSection, ViewMode};
+use super::state::{AppState, GridLayout, Modal, SidebarGroup, SidebarSection, ViewMode};
 
 pub fn render_app(state: &AppState, canvas: &mut Canvas) {
     canvas.fill_rect(
@@ -801,11 +801,68 @@ fn render_sidebar_view(state: &AppState, rect: Rect, canvas: &mut Canvas) {
         HitTarget::ToggleSidebarGroup,
     );
 
+    let show_grid_bar = rect.h >= 12;
+    if show_grid_bar {
+        let gy = rect.y + 1;
+        canvas.fill_rect(
+            Rect::new(rect.x + 1, gy, rect.w.saturating_sub(2), 1),
+            palette::BG_TOOLBAR,
+        );
+        let mut gx = rect.x + 2;
+        for layout in GridLayout::ALL {
+            if gx.saturating_add(3) >= rect.x + rect.w - 1 {
+                break;
+            }
+            let active = state.grid_layout == layout;
+            let (fg, bg) = if active {
+                (palette::FG_BRIGHT, palette::ACCENT_BRAND)
+            } else {
+                (palette::FG_SECONDARY, palette::BG_PILL)
+            };
+            let pw = canvas.put_str(
+                gx,
+                gy,
+                (rect.x + rect.w - 1).saturating_sub(gx),
+                layout.short_label(),
+                Style::new(fg, bg).with_bold(active),
+            );
+            canvas.register_hit(Rect::new(gx, gy, pw, 1), HitTarget::ApplyGrid(layout));
+            gx = gx.saturating_add(pw + 1);
+        }
+        if gx.saturating_add(5) < rect.x + rect.w {
+            let hw = canvas.put_str(
+                gx,
+                gy,
+                (rect.x + rect.w - 1).saturating_sub(gx),
+                "-Hide",
+                Style::new(palette::WAITING_FG, palette::BG_PILL).bold(),
+            );
+            canvas.register_hit(
+                Rect::new(gx, gy, hw, 1),
+                HitTarget::HideCard(state.selected_index),
+            );
+            gx = gx.saturating_add(hw + 1);
+        }
+        if gx.saturating_add(4) < rect.x + rect.w {
+            let xw = canvas.put_str(
+                gx,
+                gy,
+                (rect.x + rect.w - 1).saturating_sub(gx),
+                "×End",
+                Style::new(palette::ATTENTION_FG, palette::BG_PILL).bold(),
+            );
+            canvas.register_hit(
+                Rect::new(gx, gy, xw, 1),
+                HitTarget::CloseCard(state.selected_index),
+            );
+        }
+    }
+
     let groups = state.sidebar_sections();
     if groups.is_empty() {
         canvas.put_str(
             rect.x + 2,
-            rect.y + 2,
+            rect.y + 3,
             rect.w.saturating_sub(4),
             "No matching terminals.",
             Style::new(palette::FG_MUTED, palette::BG_COLUMN),
@@ -814,7 +871,11 @@ fn render_sidebar_view(state: &AppState, rect: Rect, canvas: &mut Canvas) {
     }
 
     let show_mini_insp = rect.h >= 15 && state.selected_item().is_some();
-    let list_top = rect.y + 1;
+    let list_top = if show_grid_bar {
+        rect.y + 2
+    } else {
+        rect.y + 1
+    };
     let list_bottom = if show_mini_insp {
         rect.y + rect.h.saturating_sub(4)
     } else {
@@ -954,7 +1015,9 @@ fn render_sidebar_card_top(
     }
 
     let in_right = state.is_in_right_pane(item);
-    let focus_btn = if in_right {
+    let focus_btn = if item.is_hidden {
+        " ◌ HIDDEN ↵ ".to_owned()
+    } else if in_right {
         " ◉ RIGHT ".to_owned()
     } else {
         format!(" {} ↵ ", item.surface_badge())
@@ -978,7 +1041,9 @@ fn render_sidebar_card_top(
     }
     if rect.w > fb_w + 6 {
         let fx = rect.x + rect.w - 1 - fb_w;
-        let (fb_fg, fb_bg) = if in_right {
+        let (fb_fg, fb_bg) = if item.is_hidden {
+            (palette::WAITING_FG, palette::WAITING_BG)
+        } else if in_right {
             (palette::WORKING_FG, palette::WORKING_BG)
         } else if selected {
             (palette::FG_BRIGHT, palette::BG_BRAND)
@@ -1373,6 +1438,17 @@ fn render_inspector(state: &AppState, rect: Rect, canvas: &mut Canvas) {
                 palette::FG_BRIGHT,
             ),
             (
+                "◌ Hide (-)",
+                HitTarget::HideCard(state.selected_index),
+                palette::WAITING_FG,
+            ),
+            (
+                "× Close (x)",
+                HitTarget::CloseCard(state.selected_index),
+                palette::ATTENTION_FG,
+            ),
+            ("⊞ Grid (m)", HitTarget::CycleGrid, palette::ACCENT_BRAND),
+            (
                 "⑂ Pair Child (p)",
                 HitTarget::OpenPairModal,
                 palette::BRANCH_FG,
@@ -1451,13 +1527,13 @@ fn render_footer(state: &AppState, view: ViewMode, y: u16, canvas: &mut Canvas) 
 
     let hint = match view {
         ViewMode::Sidebar => {
-            " ↵/Click:Focus  j/k:Move  u:NextWaiting  p:Pair  n:Spawn  g:Group  v:View  q:Quit "
+            " ↵/Click:Show  Drag/J/K:Swap  -:Hide  x:Close  m:Grid(1×1..3×3)  p:Pair  n:New  q:Quit "
         }
         ViewMode::Board => {
-            " ↵/DblClick:Focus  h/j/k/l:Navigate  u:NextWaiting  p:Pair  n:Spawn  t:Title  /:Filter  q:Quit "
+            " ↵/DblClick:Focus  Drag/J/K:Swap  -:Hide  x:Close  m:Grid  p:Pair  n:Spawn  /:Filter  q:Quit "
         }
         ViewMode::Fleet => {
-            " ↵/DblClick:Focus  j/k:Navigate  1/2/3:Views  u:NextWaiting  p:Pair  n:Spawn  t:Title  /:Filter  q:Quit "
+            " ↵/DblClick:Focus  J/K:Swap  -:Hide  x:Close  m:Grid  1/2/3:Views  p:Pair  n:Spawn  q:Quit "
         }
     };
     canvas.put_str(

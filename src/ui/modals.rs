@@ -384,19 +384,18 @@ fn render_help_modal(canvas: &mut Canvas) {
     );
 
     let lines = [
-        "Enter / Double-Click   Focus exact window, tab & split in Ghostty",
+        "Enter / Click          Focus or re-attach hidden session in right pane",
+        "Drag Card / J / K      Swap two panes or move session into target slot",
+        "- or z                 Hide session from view (keeps agent alive in background)",
+        "x                      Close & terminate session and its terminal pane",
+        "m or [1×1..3×3]        Apply right-pane grid (1×1, 1×2, 2×1, 2×2, 3×3)",
         "j / k / ↑ / ↓ / Wheel  Move selection down / up",
-        "h / l / ← / →          Switch Kanban column in Board view",
         "1 / 2 / 3 or v         Switch between Board, Fleet, and Sidebar views",
         "u / Space              Jump to & focus next Waiting / Attention agent",
-        "p                      Pair a Child / Reviewer agent under selected Parent",
-        "n                      Spawn new Ghostty split / tab (Shell or Agent)",
-        "t                      Set or clear Ghostty native title override",
-        "d                      Dock a live Sidebar split on the left in Ghostty",
-        "r / R                  Arm retry for selected (r) or all (R) failed sessions",
-        "c                      Copy exact resume command to macOS clipboard",
-        "/                      Live fuzzy filter by repo, branch, agent, or ID",
-        "a / g / w              Toggle Agents-only (a), Sidebar group (g), Scan (w)",
+        "p / n                  Pair Child agent (p) or Spawn new surface (n)",
+        "t / d                  Set title override (t) or Dock sidebar on left (d)",
+        "r / R / c              Retry selected (r) / all (R), or Copy resume cmd (c)",
+        "/ / a / g / w          Filter (/), Agents-only (a), Group (g), Scan (w)",
         "q / Esc                Close modal or quit UI",
     ];
     for (i, line) in lines.iter().enumerate() {

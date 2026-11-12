@@ -34,6 +34,9 @@ pub fn demo_snapshot() -> FleetSnapshot {
                     .into(),
             ),
             options: Vec::new(),
+            pty_id: None,
+            viewport_slot: None,
+            is_hidden: false,
         },
         FleetItem {
             terminal_key: "0195f2b0-7c10-7000-8000-000000000002".into(),
@@ -62,6 +65,9 @@ pub fn demo_snapshot() -> FleetSnapshot {
                     .into(),
             ),
             options: vec!["--no-daemon".into()],
+            pty_id: None,
+            viewport_slot: None,
+            is_hidden: false,
         },
         FleetItem {
             terminal_key: "0195f2b0-7c10-7000-8000-000000000003".into(),
@@ -90,6 +96,9 @@ pub fn demo_snapshot() -> FleetSnapshot {
                     .into(),
             ),
             options: Vec::new(),
+            pty_id: None,
+            viewport_slot: None,
+            is_hidden: false,
         },
         FleetItem {
             terminal_key: "0195f2b0-7c10-7000-8000-000000000004".into(),
@@ -118,6 +127,9 @@ pub fn demo_snapshot() -> FleetSnapshot {
                     .into(),
             ),
             options: Vec::new(),
+            pty_id: None,
+            viewport_slot: None,
+            is_hidden: false,
         },
         FleetItem {
             terminal_key: "0195f2b0-7c10-7000-8000-000000000005".into(),
@@ -146,6 +158,9 @@ pub fn demo_snapshot() -> FleetSnapshot {
                     .into(),
             ),
             options: Vec::new(),
+            pty_id: None,
+            viewport_slot: None,
+            is_hidden: false,
         },
         FleetItem {
             terminal_key: "0195f2b0-7c10-7000-8000-000000000006".into(),
@@ -174,6 +189,9 @@ pub fn demo_snapshot() -> FleetSnapshot {
                     .into(),
             ),
             options: Vec::new(),
+            pty_id: None,
+            viewport_slot: None,
+            is_hidden: false,
         },
         FleetItem {
             terminal_key: "0195f2b0-7c10-7000-8000-000000000007".into(),
@@ -199,6 +217,9 @@ pub fn demo_snapshot() -> FleetSnapshot {
             is_self_ui: false,
             resume_command: None,
             options: Vec::new(),
+            pty_id: None,
+            viewport_slot: None,
+            is_hidden: false,
         },
         FleetItem {
             terminal_key: "0195f2b0-7c10-7000-8000-000000000008".into(),
@@ -227,6 +248,9 @@ pub fn demo_snapshot() -> FleetSnapshot {
                     .into(),
             ),
             options: Vec::new(),
+            pty_id: None,
+            viewport_slot: None,
+            is_hidden: false,
         },
     ];
     let tasks = vec![HerdTask {
@@ -264,5 +288,6 @@ pub fn demo_snapshot() -> FleetSnapshot {
         attention_count: 1,
         shell_count: 1,
         saved_count: 1,
+        hidden_count: 0,
     }
 }

@@ -97,6 +97,10 @@ pub const SPAWN_SCRIPT: &str = r#"on run argv
             end repeat
             if trmId is not "" then exit repeat
         end repeat
+        if trmId is "" and (count of windows) > 0 then
+            set winId to (id of front window as text)
+            set trmId to (id of focused terminal of selected tab of front window as text)
+        end if
         if trmId is not "" then
             activate
             if mode is "tab" then
@@ -242,5 +246,132 @@ pub const SPAWN_FROM_SIDEBAR_SCRIPT: &str = r#"on run argv
         end if
         focus (terminal id newTrmId)
         return newTrmId
+    end tell
+end run"#;
+
+pub const CLOSE_TERMINAL_SCRIPT: &str = r#"on run argv
+    set targetId to item 1 of argv
+    tell application "Ghostty"
+        if not running then error "Ghostty is not running"
+        repeat with w in windows
+            repeat with tb in tabs of w
+                repeat with trm in terminals of tb
+                    if (id of trm as text) is targetId then
+                        close trm
+                        return targetId
+                    end if
+                end repeat
+            end repeat
+        end repeat
+        return ""
+    end tell
+end run"#;
+
+pub const APPLY_GRID_SCRIPT: &str = r#"on run argv
+    set sideId to item 1 of argv
+    set rowCount to (item 2 of argv) as integer
+    set colCount to (item 3 of argv) as integer
+    tell application "Ghostty"
+        if not running then error "Ghostty is not running"
+        set winId to ""
+        set tabId to ""
+        repeat with w in windows
+            repeat with tb in tabs of w
+                repeat with trm in terminals of tb
+                    if sideId is "" or (id of trm as text) is sideId then
+                        set winId to (id of w as text)
+                        set tabId to (id of tb as text)
+                        set sideId to (id of trm as text)
+                        exit repeat
+                    end if
+                end repeat
+                if tabId is not "" then exit repeat
+            end repeat
+            if tabId is not "" then exit repeat
+        end repeat
+        if tabId is "" and (count of windows) > 0 then
+            set winId to (id of front window as text)
+            set tabId to (id of selected tab of front window as text)
+            set sideId to (id of focused terminal of selected tab of front window as text)
+        end if
+        if tabId is "" then error "Sidebar terminal is no longer open in Ghostty"
+        activate
+        activate window (window id winId)
+        select tab (tab id tabId of window id winId)
+        set oldIds to {}
+        repeat with trm in terminals of (tab id tabId of window id winId)
+            set tid to (id of trm as text)
+            if tid is not sideId then
+                set end of oldIds to tid
+            end if
+        end repeat
+        repeat with oldId in oldIds
+            try
+                close (terminal id (oldId as text))
+            end try
+        end repeat
+        set name override of (terminal id sideId) to "◈ HERD"
+        set rowFirstIds to {}
+        repeat with r from 1 to rowCount
+            set cellIdx to ((r - 1) * colCount) + 1
+            set baseIdx to 3 + ((cellIdx - 1) * 3)
+            set cCwd to item (baseIdx + 1) of argv
+            set cTitle to item (baseIdx + 2) of argv
+            set cCmd to item (baseIdx + 3) of argv
+            set cfg to new surface configuration
+            if cCwd is not "" then
+                set initial working directory of cfg to cCwd
+            end if
+            if cCmd is not "" then
+                set command of cfg to cCmd
+            end if
+            if r is 1 then
+                set newTrm to split (terminal id sideId) direction right with configuration cfg
+            else
+                set prevRowId to item (r - 1) of rowFirstIds
+                set newTrm to split (terminal id prevRowId) direction down with configuration cfg
+            end if
+            if cTitle is not "" then
+                set name override of newTrm to cTitle
+            end if
+            set end of rowFirstIds to (id of newTrm as text)
+        end repeat
+        set outLines to ""
+        repeat with r from 1 to rowCount
+            set prevId to item r of rowFirstIds
+            if outLines is "" then
+                set outLines to prevId
+            else
+                set outLines to outLines & linefeed & prevId
+            end if
+            if colCount > 1 then
+                repeat with c from 2 to colCount
+                    set cellIdx to ((r - 1) * colCount) + c
+                    set baseIdx to 3 + ((cellIdx - 1) * 3)
+                    set cCwd to item (baseIdx + 1) of argv
+                    set cTitle to item (baseIdx + 2) of argv
+                    set cCmd to item (baseIdx + 3) of argv
+                    set cfg to new surface configuration
+                    if cCwd is not "" then
+                        set initial working directory of cfg to cCwd
+                    end if
+                    if cCmd is not "" then
+                        set command of cfg to cCmd
+                    end if
+                    set newTrm to split (terminal id prevId) direction right with configuration cfg
+                    if cTitle is not "" then
+                        set name override of newTrm to cTitle
+                    end if
+                    set prevId to (id of newTrm as text)
+                    set outLines to outLines & linefeed & prevId
+                end repeat
+            end if
+        end repeat
+        if (count of rowFirstIds) > 0 then
+            perform action "equalize_splits" on (terminal id (item 1 of rowFirstIds))
+        end if
+        perform action "resize_split:left,260" on (terminal id sideId)
+        focus (terminal id sideId)
+        return outLines
     end tell
 end run"#;

@@ -20,6 +20,8 @@ pub enum KeyEvent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MouseKind {
     LeftDown,
+    Drag,
+    LeftUp,
     Move,
     ScrollUp,
     ScrollDown,
@@ -33,13 +35,24 @@ pub struct MouseEvent {
 }
 
 fn parse_sgr_mouse(seq: &str, final_byte: u8) -> Option<MouseEvent> {
-    if final_byte != b'M' {
+    if final_byte != b'M' && final_byte != b'm' {
         return None;
     }
     let mut parts = seq.split(';');
     let btn = parts.next()?.parse::<u16>().ok()?;
     let col = parts.next()?.parse::<u16>().ok()?.saturating_sub(1);
     let row = parts.next()?.parse::<u16>().ok()?.saturating_sub(1);
+
+    if final_byte == b'm' {
+        if (btn & 3) == 0 {
+            return Some(MouseEvent {
+                kind: MouseKind::LeftUp,
+                col,
+                row,
+            });
+        }
+        return None;
+    }
 
     let kind = if btn & 64 != 0 {
         if btn & 1 == 0 {
@@ -48,7 +61,11 @@ fn parse_sgr_mouse(seq: &str, final_byte: u8) -> Option<MouseEvent> {
             MouseKind::ScrollDown
         }
     } else if btn & 32 != 0 {
-        MouseKind::Move
+        if (btn & 3) == 0 {
+            MouseKind::Drag
+        } else {
+            MouseKind::Move
+        }
     } else if (btn & 3) == 0 {
         MouseKind::LeftDown
     } else {

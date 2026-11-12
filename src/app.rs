@@ -100,19 +100,7 @@ pub fn register_hook(store: &Store, agent: Agent, payload: serde_json::Value) ->
     let hint = std::env::var("GHOSTBACK_TERMINAL_KEY").ok();
     let host = std::env::var("GHOSTBACK_HOST_KEY").ok();
     let key = if let (Some(hint), Some(host)) = (hint, host) {
-        let mut ancestor = owner.clone();
-        let mut valid = false;
-        for _ in 0..32 {
-            if ancestor.key() == host {
-                valid = true;
-                break;
-            }
-            if ancestor.parent <= 1 {
-                break;
-            }
-            ancestor = native::process(ancestor.parent)?;
-        }
-        if !valid {
+        if !native::has_ancestor_key(owner.pid, &host) {
             return Err(invalid("hook host identity is stale"));
         }
         uuid::Uuid::parse_str(&hint)?.to_string()
@@ -230,39 +218,62 @@ impl WatchState {
 
 pub fn scan(store: &Store, roots: &Roots, state: &mut WatchState) -> Result<usize> {
     let terminals = macos::inventory()?;
+    let live_ptys = crate::herd::list_live_ptys(&store.directory);
     let generation = ghostty_generation()?;
-    let current = terminals
+    let mut current: HashSet<String> = terminals
         .iter()
         .map(|t| t.terminal_key.to_string())
         .collect();
+    for pty in &live_ptys {
+        current.insert(pty.pty_id.clone());
+    }
     for key in state.closed_terminals(generation, current) {
         store.retire(&key, "Terminal was deliberately closed.")?;
     }
+    let mut targets: Vec<(String, u32, PathBuf)> = terminals
+        .into_iter()
+        .map(|t| (t.terminal_key.to_string(), t.pid, t.cwd))
+        .collect();
+    for pty in live_ptys {
+        targets.push((pty.pty_id, pty.child_pid, pty.cwd));
+    }
     let mut captured = 0;
-    for terminal in terminals {
-        let key = terminal.terminal_key.to_string();
+    for (key, pid, cwd) in targets {
         state.missing.remove(&key);
-        let mut owner = match native::process(terminal.pid) {
+        let mut owner = match native::process(pid) {
             Ok(process) => process,
             Err(_) => continue,
         };
-        for _ in 0..4 {
+        for _ in 0..6 {
             if owner.name != "ghostback" && !owner.is_shell() {
                 break;
             }
             let children = capture::child_pids(owner.pid)?;
-            let matches: Vec<_> = children
+            let procs: Vec<_> = children
                 .into_iter()
                 .filter_map(|pid| native::process(pid).ok())
-                .filter(|p| p.agent().is_some() || p.name == "ghostback")
                 .collect();
-            if matches.len() != 1 {
-                break;
+            let matches: Vec<_> = procs
+                .iter()
+                .filter(|p| p.agent().is_some() || p.name == "ghostback")
+                .cloned()
+                .collect();
+            if matches.len() == 1 {
+                owner = matches
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| invalid("agent disappeared"))?;
+                continue;
             }
-            owner = matches
-                .into_iter()
-                .next()
-                .ok_or_else(|| invalid("agent disappeared"))?;
+            let shells: Vec<_> = procs.into_iter().filter(|p| p.is_shell()).collect();
+            if matches.is_empty() && shells.len() == 1 {
+                owner = shells
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| invalid("shell disappeared"))?;
+                continue;
+            }
+            break;
         }
         if owner.agent().is_none() {
             continue;
@@ -299,7 +310,7 @@ pub fn scan(store: &Store, roots: &Roots, state: &mut WatchState) -> Result<usiz
             }
             continue;
         }
-        let outcome = capture::resolve(store, roots, &owner, &key, &terminal.cwd, &mut state.cache);
+        let outcome = capture::resolve(store, roots, &owner, &key, &cwd, &mut state.cache);
         match outcome {
             Ok(Some(mut observed)) => {
                 observed.executable = agent_executable(observed.session.agent, &owner);

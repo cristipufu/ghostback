@@ -226,3 +226,25 @@ pub fn alive(key: &str) -> bool {
         .and_then(|pid| process(pid).ok())
         .is_some_and(|p| p.key() == key)
 }
+
+pub fn has_ancestor_key(start_pid: u32, target_key: &str) -> bool {
+    if target_key.is_empty() {
+        return false;
+    }
+    let Ok(mut cur) = process(start_pid) else {
+        return false;
+    };
+    for _ in 0..32 {
+        if cur.key() == target_key {
+            return true;
+        }
+        if cur.parent <= 1 {
+            break;
+        }
+        let Ok(next) = process(cur.parent) else {
+            break;
+        };
+        cur = next;
+    }
+    false
+}

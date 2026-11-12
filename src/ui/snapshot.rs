@@ -78,10 +78,20 @@ pub struct FleetItem {
     pub is_self_ui: bool,
     pub resume_command: Option<String>,
     pub options: Vec<String>,
+    pub pty_id: Option<String>,
+    pub viewport_slot: Option<String>,
+    pub is_hidden: bool,
 }
 
 impl FleetItem {
+    pub fn task_identity(&self) -> &str {
+        self.pty_id.as_deref().unwrap_or(&self.terminal_key)
+    }
+
     pub fn surface_badge(&self) -> String {
+        if self.is_hidden {
+            return "◌ HIDDEN".into();
+        }
         match (self.window_index, self.tab_index, self.split_index) {
             (Some(w), Some(t), Some((s, total))) if total > 1 => {
                 format!("W{w}·T{t}·S{s}/{total}")
@@ -149,6 +159,18 @@ impl FleetItem {
                 .is_some_and(|id| id.to_ascii_lowercase().contains(&q))
             || self.terminal_key.to_ascii_lowercase().contains(&q)
     }
+
+    pub fn binding_key(&self) -> &str {
+        self.pty_id.as_deref().unwrap_or(&self.terminal_key)
+    }
+
+    pub fn matches_key(&self, key: &str) -> bool {
+        self.terminal_key.eq_ignore_ascii_case(key)
+            || self
+                .pty_id
+                .as_deref()
+                .is_some_and(|p| p.eq_ignore_ascii_case(key))
+    }
 }
 
 pub fn short_key(key: &str) -> String {
@@ -174,6 +196,7 @@ pub struct FleetSnapshot {
     pub attention_count: usize,
     pub shell_count: usize,
     pub saved_count: usize,
+    pub hidden_count: usize,
 }
 
 /// Fast, bounded, zero-subprocess `.git/HEAD` and worktree inspection.
@@ -275,7 +298,7 @@ fn inspect_terminal_process(pid: u32, children_map: &HashMap<u32, Vec<u32>>) -> 
         };
     };
     let mut current = root;
-    for _ in 0..4 {
+    for _ in 0..6 {
         if current.name != "ghostback" && !current.is_shell() {
             break;
         }
@@ -367,6 +390,41 @@ fn find_active_tool_child(
     None
 }
 
+fn extract_attach_args(
+    pid: u32,
+    children_map: &HashMap<u32, Vec<u32>>,
+) -> Option<(String, String)> {
+    let mut candidates = vec![pid];
+    if let Some(children) = children_map.get(&pid) {
+        candidates.extend(children.iter().copied());
+    }
+    for cpid in candidates {
+        let Ok(proc) = native::process(cpid) else {
+            continue;
+        };
+        if proc.name != "ghostback" {
+            continue;
+        }
+        if !proc.argv.iter().any(|a| a == "attach") {
+            continue;
+        }
+        let mut pty_id = None;
+        let mut slot_id = None;
+        let mut it = proc.argv.iter();
+        while let Some(arg) = it.next() {
+            if arg == "--pty" {
+                pty_id = it.next().cloned();
+            } else if arg == "--slot" {
+                slot_id = it.next().cloned();
+            }
+        }
+        if let (Some(p), Some(s)) = (pty_id, slot_id) {
+            return Some((p, s));
+        }
+    }
+    None
+}
+
 pub fn build_snapshot_from_parts(
     terminals: Vec<Terminal>,
     bindings: Vec<Binding>,
@@ -375,15 +433,52 @@ pub fn build_snapshot_from_parts(
     ghostty_online: bool,
     ghostty_error: Option<String>,
 ) -> FleetSnapshot {
+    build_snapshot_from_parts_with_ptys(
+        terminals,
+        bindings,
+        health,
+        self_key,
+        ghostty_online,
+        ghostty_error,
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_snapshot_from_parts_with_ptys(
+    terminals: Vec<Terminal>,
+    bindings: Vec<Binding>,
+    health: &BTreeMap<String, String>,
+    self_key: Option<&str>,
+    ghostty_online: bool,
+    ghostty_error: Option<String>,
+    live_ptys: Vec<herd::PtySessionMeta>,
+    live_viewports: Vec<herd::ViewportBinding>,
+) -> FleetSnapshot {
     let watcher_alive = health
         .get("watcher.process")
         .is_some_and(|key| native::alive(key));
 
-    let children_map = if terminals.is_empty() {
+    let children_map = if terminals.is_empty() && live_ptys.is_empty() {
         HashMap::new()
     } else {
         process_children_map()
     };
+
+    let mut pty_map: HashMap<String, herd::PtySessionMeta> = live_ptys
+        .into_iter()
+        .map(|p| (p.pty_id.clone(), p))
+        .collect();
+    let mut vp_by_tty: HashMap<String, herd::ViewportBinding> = HashMap::new();
+    let mut vp_by_slot: HashMap<String, herd::ViewportBinding> = HashMap::new();
+    for vp in live_viewports {
+        let short_tty = vp.viewport_tty.trim_start_matches("/dev/").to_owned();
+        if !short_tty.is_empty() {
+            vp_by_tty.insert(short_tty, vp.clone());
+        }
+        vp_by_slot.insert(vp.slot_id.clone(), vp);
+    }
 
     // Compute window 1-based numbering and split counts per tab.
     let mut window_order: Vec<String> = Vec::new();
@@ -419,13 +514,45 @@ pub fn build_snapshot_from_parts(
             *entry
         };
 
-        let binding = binding_map.remove(&key);
-        let live = inspect_terminal_process(term.pid, &children_map);
+        let short_term_tty = term.tty.trim_start_matches("/dev/");
+        let attach_args = extract_attach_args(term.pid, &children_map);
+        let matched_vp = vp_by_tty
+            .get(short_term_tty)
+            .map(|vp| (vp.pty_id.clone(), vp.slot_id.clone()))
+            .or_else(|| {
+                attach_args
+                    .as_ref()
+                    .and_then(|(_, s)| vp_by_slot.get(s).map(|vp| (vp.pty_id.clone(), s.clone())))
+            });
+        if matched_vp.is_none() && attach_args.is_some() {
+            continue;
+        }
+
+        let (pty_id, viewport_slot, attached_pty) = if let Some((pid_str, slot_str)) = matched_vp {
+            let meta = pty_map.remove(&pid_str);
+            (Some(pid_str), Some(slot_str), meta)
+        } else {
+            (None, None, None)
+        };
+
+        let binding = pty_id
+            .as_deref()
+            .and_then(|pid_key| binding_map.remove(pid_key))
+            .or_else(|| binding_map.remove(&key));
+        let inspect_pid = attached_pty
+            .as_ref()
+            .map(|m| m.child_pid)
+            .unwrap_or(term.pid);
+        let live = inspect_terminal_process(inspect_pid, &children_map);
         let is_self_ui = self_key.is_some_and(|sk| sk.eq_ignore_ascii_case(&key))
             || term.pid == std::process::id()
             || term.terminal_title == SIDEBAR_PANE_TITLE;
 
-        let cwd = if term.cwd.as_os_str().is_empty() {
+        let cwd = if let Some(ref meta) = attached_pty
+            && !meta.cwd.as_os_str().is_empty()
+        {
+            meta.cwd.clone()
+        } else if term.cwd.as_os_str().is_empty() {
             binding
                 .as_ref()
                 .map(|b| b.session.cwd.clone())
@@ -437,13 +564,18 @@ pub fn build_snapshot_from_parts(
         let git = resolve_git_info(&cwd);
         let title = if !term.terminal_title.is_empty() {
             term.terminal_title.clone()
+        } else if let Some(ref meta) = attached_pty
+            && !meta.label.is_empty()
+        {
+            meta.label.clone()
         } else if !term.tab_title.is_empty() {
             term.tab_title.clone()
         } else {
             project.clone()
         };
 
-        let classified = classify_live_terminal(&term, binding, &live, is_self_ui, health);
+        let diag_key = pty_id.as_deref().unwrap_or(&key);
+        let classified = classify_live_key(diag_key, binding, &live, is_self_ui, health);
 
         items.push(FleetItem {
             terminal_key: key,
@@ -459,13 +591,70 @@ pub fn build_snapshot_from_parts(
             window_index: win_idx,
             tab_index: Some(term.tab_index),
             split_index: Some((split_seq, total_splits)),
-            tty: term.tty,
-            pid: Some(term.pid),
+            tty: attached_pty
+                .as_ref()
+                .filter(|m| !m.slave_tty.is_empty())
+                .map(|m| m.slave_tty.clone())
+                .unwrap_or(term.tty),
+            pid: Some(inspect_pid),
             title,
             focused_in_ghostty: term.focused,
             is_self_ui,
             resume_command: classified.resume_command,
             options: classified.options,
+            pty_id,
+            viewport_slot,
+            is_hidden: false,
+        });
+    }
+
+    // Background / Hidden PTY sessions that are running alive in `pty-host` without an attached Ghostty split.
+    let mut hidden_ptys: Vec<herd::PtySessionMeta> = pty_map.into_values().collect();
+    hidden_ptys.sort_by_key(|a| a.created_at);
+    for pty_meta in hidden_ptys {
+        let key = pty_meta.pty_id.clone();
+        let binding = binding_map.remove(&key);
+        let live = inspect_terminal_process(pty_meta.child_pid, &children_map);
+        let cwd = if pty_meta.cwd.as_os_str().is_empty() {
+            binding
+                .as_ref()
+                .map(|b| b.session.cwd.clone())
+                .unwrap_or_else(|| PathBuf::from("/"))
+        } else {
+            pty_meta.cwd.clone()
+        };
+        let project = project_name(&cwd);
+        let git = resolve_git_info(&cwd);
+        let title = if !pty_meta.label.is_empty() {
+            pty_meta.label.clone()
+        } else {
+            project.clone()
+        };
+        let classified = classify_live_key(&key, binding, &live, false, health);
+        items.push(FleetItem {
+            terminal_key: key.clone(),
+            activity: classified.activity,
+            agent: classified.agent,
+            session_id: classified.session_id,
+            phase: classified.phase,
+            status_text: classified.status_text,
+            active_tool: live.active_tool,
+            cwd,
+            project,
+            git,
+            window_index: None,
+            tab_index: None,
+            split_index: None,
+            tty: pty_meta.slave_tty,
+            pid: Some(pty_meta.child_pid),
+            title,
+            focused_in_ghostty: false,
+            is_self_ui: false,
+            resume_command: classified.resume_command,
+            options: classified.options,
+            pty_id: Some(key),
+            viewport_slot: None,
+            is_hidden: true,
         });
     }
 
@@ -515,6 +704,9 @@ pub fn build_snapshot_from_parts(
             is_self_ui: false,
             resume_command,
             options: b.options,
+            pty_id: None,
+            viewport_slot: None,
+            is_hidden: false,
         });
     }
 
@@ -522,6 +714,7 @@ pub fn build_snapshot_from_parts(
     items.sort_by(|a, b| {
         a.activity
             .cmp(&b.activity)
+            .then_with(|| a.is_hidden.cmp(&b.is_hidden))
             .then_with(|| {
                 a.window_index
                     .unwrap_or(999)
@@ -558,6 +751,7 @@ pub fn build_snapshot_from_parts(
         .iter()
         .filter(|i| i.activity == Activity::Saved)
         .count();
+    let hidden_count = items.iter().filter(|i| i.is_hidden).count();
 
     FleetSnapshot {
         items,
@@ -570,6 +764,7 @@ pub fn build_snapshot_from_parts(
         attention_count,
         shell_count,
         saved_count,
+        hidden_count,
     }
 }
 
@@ -583,14 +778,13 @@ struct ClassifiedTerminal {
     options: Vec<String>,
 }
 
-fn classify_live_terminal(
-    term: &Terminal,
+fn classify_live_key(
+    key: &str,
     binding: Option<Binding>,
     live: &LiveProcessInfo,
     is_self_ui: bool,
     health: &BTreeMap<String, String>,
 ) -> ClassifiedTerminal {
-    let key = term.terminal_key.to_string();
     let terminal_diag = health
         .get(&format!("terminal.{key}"))
         .filter(|v| *v != "captured")
@@ -722,6 +916,8 @@ pub fn collect_snapshot_with_tty(
     let bindings = store.bindings().unwrap_or_default();
     let health = store.health_status().unwrap_or_default();
     let tasks = herd::list_tasks(store).unwrap_or_default();
+    let live_ptys = herd::list_live_ptys(&store.directory);
+    let live_viewports = herd::list_live_viewports(&store.directory);
     let mut snap = match macos::inventory() {
         Ok(terminals) => {
             let resolved_self = self_key.map(str::to_owned).or_else(|| {
@@ -729,22 +925,26 @@ pub fn collect_snapshot_with_tty(
                     .and_then(|tty| macos::match_terminal(&terminals, tty).ok())
                     .map(|u| u.to_string())
             });
-            build_snapshot_from_parts(
+            build_snapshot_from_parts_with_ptys(
                 terminals,
                 bindings,
                 &health,
                 resolved_self.as_deref(),
                 true,
                 None,
+                live_ptys,
+                live_viewports,
             )
         }
-        Err(error) => build_snapshot_from_parts(
+        Err(error) => build_snapshot_from_parts_with_ptys(
             Vec::new(),
             bindings,
             &health,
             self_key,
             false,
             Some(error.to_string()),
+            live_ptys,
+            live_viewports,
         ),
     };
     snap.tasks = tasks;

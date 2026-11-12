@@ -3,7 +3,7 @@ use crate::macos::SpawnDisposition;
 use crate::sessions::Agent;
 
 use super::snapshot::Activity;
-use super::state::ViewMode;
+use super::state::{GridLayout, ViewMode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
@@ -158,6 +158,10 @@ impl Rect {
 pub enum HitTarget {
     SelectCard(usize),
     FocusCard(usize),
+    HideCard(usize),
+    CloseCard(usize),
+    ApplyGrid(GridLayout),
+    CycleGrid,
     SetView(ViewMode),
     FilterStatus(Option<Activity>),
     ToggleAgentsOnly,

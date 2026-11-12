@@ -1405,3 +1405,204 @@ fn task_resolution_prefers_active_tasks_and_mcp_supports_content_length_framing(
     let parsed: Value = serde_json::from_str(json_part).unwrap();
     assert_eq!(parsed["id"], 99);
 }
+
+#[test]
+fn managed_pty_hide_from_view_close_drag_swap_and_3x3_grid_layouts() {
+    use ghostback::herd::{
+        ViewportBinding, detach_pty_from_viewports, kill_pty, list_live_ptys, list_live_viewports,
+        spawn_managed_pty, swap_viewports, write_viewport_binding,
+    };
+    use ghostback::ui::{GridLayout, build_snapshot_from_parts_with_ptys};
+
+    let root = TempDir::new().unwrap();
+    let state_dir = root.path().join("state");
+    let cwd = root.path().join("workspace");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::create_dir_all(&cwd).unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_ghostback");
+    let exe = PathBuf::from(bin);
+
+    // 1. Spawn two real background PTY hosts (`pty-host`) that stay alive independent of any Ghostty split
+    let pty_a = Uuid::from_u128(901).to_string();
+    let pty_b = Uuid::from_u128(902).to_string();
+    let marker_a = root.path().join("alive_a.txt");
+    let cmd_a = format!(
+        "echo running > '{}' && sleep 30",
+        marker_a.to_string_lossy()
+    );
+    let meta_a = spawn_managed_pty(
+        &exe,
+        &state_dir,
+        &pty_a,
+        &cwd,
+        "claude-worker",
+        Some(&cmd_a),
+    )
+    .expect("spawn pty_a");
+    let meta_b = spawn_managed_pty(
+        &exe,
+        &state_dir,
+        &pty_b,
+        &cwd,
+        "codex-reviewer",
+        Some("sleep 30"),
+    )
+    .expect("spawn pty_b");
+
+    assert!(!meta_a.slave_tty.is_empty());
+    assert!(!meta_b.slave_tty.is_empty());
+    assert_eq!(list_live_ptys(&state_dir).len(), 2);
+
+    // Wait briefly for pty_a's command to write marker_a
+    for _ in 0..40 {
+        if marker_a.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(marker_a.exists());
+
+    // 2. Bind two viewports (slot-1 and slot-2) to pty_a and pty_b, and test 0ms swap_viewports
+    let my_pid = std::process::id();
+    write_viewport_binding(
+        &state_dir,
+        &ViewportBinding {
+            slot_id: "slot-1".into(),
+            pty_id: pty_a.clone(),
+            attach_pid: my_pid,
+            viewport_tty: "ttys001".into(),
+            updated_at: 1,
+        },
+    )
+    .unwrap();
+    write_viewport_binding(
+        &state_dir,
+        &ViewportBinding {
+            slot_id: "slot-2".into(),
+            pty_id: pty_b.clone(),
+            attach_pid: my_pid,
+            viewport_tty: "ttys002".into(),
+            updated_at: 1,
+        },
+    )
+    .unwrap();
+    swap_viewports(&state_dir, "slot-1", "slot-2").unwrap();
+    let vps = list_live_viewports(&state_dir);
+    let slot1_pty = vps
+        .iter()
+        .find(|v| v.slot_id == "slot-1")
+        .map(|v| v.pty_id.as_str());
+    let slot2_pty = vps
+        .iter()
+        .find(|v| v.slot_id == "slot-2")
+        .map(|v| v.pty_id.as_str());
+    assert_eq!(slot1_pty, Some(pty_b.as_str()));
+    assert_eq!(slot2_pty, Some(pty_a.as_str()));
+
+    // 3. Hide pty_a from view (`detach_pty_from_viewports`): slot-2 is marked CLOSE,
+    // while pty_a remains 100% alive in the background and shows up as `is_hidden: true` (`◌ HIDDEN`)!
+    detach_pty_from_viewports(&state_dir, &pty_a).unwrap();
+    let vps_after_hide = list_live_viewports(&state_dir);
+    assert_eq!(vps_after_hide.len(), 1);
+    assert_eq!(vps_after_hide[0].slot_id, "slot-1");
+
+    let terminals = vec![sample_terminal(1, "w1", "t1", 1, cwd.clone(), true)];
+    let snap = build_snapshot_from_parts_with_ptys(
+        terminals,
+        Vec::new(),
+        &BTreeMap::new(),
+        None,
+        true,
+        None,
+        list_live_ptys(&state_dir),
+        vps_after_hide,
+    );
+    assert_eq!(snap.hidden_count, 1);
+    let hidden_item = snap.items.iter().find(|i| i.is_hidden).unwrap();
+    assert_eq!(hidden_item.pty_id.as_deref(), Some(pty_a.as_str()));
+    assert_eq!(hidden_item.surface_badge(), "◌ HIDDEN");
+
+    // 4. Verify UI Sidebar renders `1×1`..`3×3` grid buttons, `-Hide`, `×End`, and `◌ HIDDEN ↵` badge,
+    // and supports mouse drag-and-drop swap (`LeftDown` -> `Drag` -> `LeftUp`) + `J`/`K` swap + `-`/`x` hotkeys!
+    let mut state = AppState::new(snap, true, None);
+    let mut canvas = Canvas::new(46, 24);
+    render_app(&state, &mut canvas);
+    let side_rendered = canvas.render_snapshot(false);
+    assert!(side_rendered.contains("1×1"));
+    assert!(side_rendered.contains("1×2"));
+    assert!(side_rendered.contains("2×1"));
+    assert!(side_rendered.contains("2×2"));
+    assert!(side_rendered.contains("3×3"));
+    assert!(side_rendered.contains("-Hide"));
+    assert!(side_rendered.contains("×End"));
+    assert!(side_rendered.contains("◌ HIDDEN ↵"));
+
+    // Clicking the hidden session emits AttachHiddenPty so it re-attaches in 0ms
+    let hidden_idx = state
+        .snapshot
+        .items
+        .iter()
+        .position(|i| i.is_hidden)
+        .unwrap();
+    let attach_eff = state.apply_hit(HitTarget::FocusCard(hidden_idx));
+    assert!(matches!(attach_eff, UiEffect::AttachHiddenPty { ref pty_id, .. } if pty_id == &pty_a));
+
+    // Dragging card 0 onto card 1 with SGR mouse sequences (`0;..M` -> `32;..M` -> `0;..m`) emits SwapSessions(0, 1)
+    let card0_rect = canvas
+        .hits
+        .iter()
+        .find_map(|(r, t)| matches!(t, HitTarget::SelectCard(0)).then_some(*r))
+        .unwrap();
+    let card1_rect = canvas
+        .hits
+        .iter()
+        .find_map(|(r, t)| matches!(t, HitTarget::SelectCard(1)).then_some(*r))
+        .unwrap();
+    let sgr_drag = format!(
+        "\x1b[<0;{};{}M\x1b[<32;{};{}M\x1b[<0;{};{}m",
+        card0_rect.x + 2,
+        card0_rect.y + 1,
+        card1_rect.x + 2,
+        card1_rect.y + 1,
+        card1_rect.x + 2,
+        card1_rect.y + 1,
+    );
+    let (_, drag_mice) = parse_input_events(sgr_drag.as_bytes());
+    assert_eq!(drag_mice.len(), 3);
+    assert_eq!(drag_mice[0].kind, MouseKind::LeftDown);
+    assert_eq!(drag_mice[1].kind, MouseKind::Drag);
+    assert_eq!(drag_mice[2].kind, MouseKind::LeftUp);
+    let _ = state.handle_mouse(drag_mice[0], &canvas);
+    let _ = state.handle_mouse(drag_mice[1], &canvas);
+    let drop_eff = state.handle_mouse(drag_mice[2], &canvas);
+    assert!(matches!(drop_eff, UiEffect::SwapSessions(0, 1)));
+
+    // Pressing Shift+J / Shift+K swaps sessions via keyboard
+    let key_swap = state.handle_key(KeyEvent::Char('J'), 46);
+    assert!(matches!(key_swap, UiEffect::SwapSessions(_, _)));
+
+    // Pressing '-' emits HideSession and pressing 'x' emits CloseSession
+    assert!(matches!(
+        state.handle_key(KeyEvent::Char('-'), 46),
+        UiEffect::HideSession(_)
+    ));
+    assert!(matches!(
+        state.handle_key(KeyEvent::Char('x'), 46),
+        UiEffect::CloseSession(_)
+    ));
+
+    // Clicking the 3x3 grid preset pill emits ApplyGridLayout(GridLayout::Grid3x3) with (3, 3) = 9 cells
+    assert_eq!(GridLayout::Grid3x3.dimensions(), (3, 3));
+    assert_eq!(GridLayout::Grid3x3.cells(), 9);
+    let grid_eff = state.apply_hit(HitTarget::ApplyGrid(GridLayout::Grid3x3));
+    assert!(matches!(
+        grid_eff,
+        UiEffect::ApplyGridLayout(GridLayout::Grid3x3)
+    ));
+
+    // 5. Terminate both background PTYs (`kill_pty`) and verify clean shutdown
+    kill_pty(&state_dir, &pty_a).unwrap();
+    kill_pty(&state_dir, &pty_b).unwrap();
+    assert!(list_live_ptys(&state_dir).is_empty());
+}

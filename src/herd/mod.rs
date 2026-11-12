@@ -2,9 +2,11 @@
 
 pub mod launch;
 pub mod mcp;
+pub mod pty;
 
 pub use launch::*;
 pub use mcp::*;
+pub use pty::*;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1058,11 +1060,35 @@ pub fn delegate_task(
         } else {
             macos::SpawnDisposition::SplitRight
         };
-        let spawned_uuid =
-            macos::spawn_surface(target_uuid, disposition, spec.cwd, Some(&launch_cmd))?;
         let title = format_child_terminal_title(spec.role, spec.child_agent, &task_id);
-        let _ = macos::set_terminal_title(spawned_uuid, &title);
-        (spawned_uuid.to_string(), Some(spawned_uuid))
+        let new_pty_id = generate_synthetic_terminal_key();
+        if let Ok(pty_meta) = spawn_managed_pty(
+            spec.exe,
+            &store.directory,
+            &new_pty_id,
+            spec.cwd,
+            &title,
+            Some(&launch_cmd),
+        ) {
+            let slot_id = generate_task_id();
+            let attach_cmd =
+                build_attach_command(spec.exe, &store.directory, &pty_meta.pty_id, &slot_id);
+            let spawned_uuid =
+                match macos::spawn_surface(target_uuid, disposition, spec.cwd, Some(&attach_cmd)) {
+                    Ok(id) => id,
+                    Err(err) => {
+                        let _ = kill_pty(&store.directory, &pty_meta.pty_id);
+                        return Err(err);
+                    }
+                };
+            let _ = macos::set_terminal_title(spawned_uuid, &title);
+            (pty_meta.pty_id, Some(spawned_uuid))
+        } else {
+            let spawned_uuid =
+                macos::spawn_surface(target_uuid, disposition, spec.cwd, Some(&launch_cmd))?;
+            let _ = macos::set_terminal_title(spawned_uuid, &title);
+            (spawned_uuid.to_string(), Some(spawned_uuid))
+        }
     };
 
     let (task, seq) = create_task(

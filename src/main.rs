@@ -209,6 +209,24 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    #[command(hide = true)]
+    PtyHost {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        cwd: PathBuf,
+        #[arg(long, default_value = "")]
+        label: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        cmd: Vec<String>,
+    },
+    #[command(hide = true)]
+    Attach {
+        #[arg(long)]
+        pty: String,
+        #[arg(long)]
+        slot: Option<String>,
+    },
 }
 
 fn find_program(name: &str) -> Option<PathBuf> {
@@ -694,6 +712,17 @@ fn run(cli: Cli, out: &mut impl Write) -> Result<i32> {
                     }
                 }
             }
+        }
+        Commands::PtyHost {
+            id,
+            cwd,
+            label,
+            cmd,
+        } => {
+            herd::run_pty_host(&store.directory, &id, &cwd, &label, &cmd)?;
+        }
+        Commands::Attach { pty, slot } => {
+            herd::run_attach(&store.directory, &pty, slot.as_deref())?;
         }
     }
     out.flush()?;

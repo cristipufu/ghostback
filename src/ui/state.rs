@@ -36,6 +36,60 @@ pub enum SidebarGroup {
     Project,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GridLayout {
+    Single,
+    TwoCols,
+    TwoRows,
+    Grid2x2,
+    Grid3x3,
+}
+
+impl GridLayout {
+    pub const ALL: [Self; 5] = [
+        Self::Single,
+        Self::TwoCols,
+        Self::TwoRows,
+        Self::Grid2x2,
+        Self::Grid3x3,
+    ];
+
+    pub const fn dimensions(self) -> (u8, u8) {
+        match self {
+            Self::Single => (1, 1),
+            Self::TwoCols => (1, 2),
+            Self::TwoRows => (2, 1),
+            Self::Grid2x2 => (2, 2),
+            Self::Grid3x3 => (3, 3),
+        }
+    }
+
+    pub const fn cells(self) -> usize {
+        let (r, c) = self.dimensions();
+        (r as usize) * (c as usize)
+    }
+
+    pub const fn short_label(self) -> &'static str {
+        match self {
+            Self::Single => "1×1",
+            Self::TwoCols => "1×2",
+            Self::TwoRows => "2×1",
+            Self::Grid2x2 => "2×2",
+            Self::Grid3x3 => "3×3",
+        }
+    }
+
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Single => Self::TwoCols,
+            Self::TwoCols => Self::TwoRows,
+            Self::TwoRows => Self::Grid2x2,
+            Self::Grid2x2 => Self::Grid3x3,
+            Self::Grid3x3 => Self::Single,
+        }
+    }
+}
+
 pub struct SidebarRow<'a> {
     pub idx: usize,
     pub item: &'a FleetItem,
@@ -162,6 +216,15 @@ pub enum UiEffect {
     Retry(Option<String>),
     DockSidebar,
     CopyCommand(String),
+    HideSession(usize),
+    CloseSession(usize),
+    SwapSessions(usize, usize),
+    ApplyGridLayout(GridLayout),
+    AttachHiddenPty {
+        pty_id: String,
+        cwd: PathBuf,
+        title: String,
+    },
 }
 
 pub struct AppState {
@@ -169,6 +232,7 @@ pub struct AppState {
     pub view: ViewMode,
     pub auto_sidebar: bool,
     pub sidebar_group: SidebarGroup,
+    pub grid_layout: GridLayout,
     pub agents_only: bool,
     pub show_saved: bool,
     pub status_filter: Option<Activity>,
@@ -176,6 +240,8 @@ pub struct AppState {
     pub selected_index: usize,
     pub selected_key: Option<String>,
     pub hover_pos: Option<(u16, u16)>,
+    pub drag_source: Option<usize>,
+    pub drag_active: bool,
     pub last_click: Option<(usize, Instant)>,
     pub modal: Modal,
     pub toast: Option<(String, bool, Instant)>,
@@ -227,6 +293,7 @@ impl AppState {
             },
             auto_sidebar: !force_sidebar,
             sidebar_group: SidebarGroup::Status,
+            grid_layout: GridLayout::Single,
             agents_only: false,
             show_saved,
             status_filter: None,
@@ -234,6 +301,8 @@ impl AppState {
             selected_index: 0,
             selected_key,
             hover_pos: None,
+            drag_source: None,
+            drag_active: false,
             last_click: None,
             modal: Modal::None,
             toast: None,
@@ -278,6 +347,12 @@ impl AppState {
     }
 
     pub fn current_tab_right_pane_uuid(&self) -> Option<Uuid> {
+        if let Some(sel) = self.selected_item()
+            && self.is_in_right_pane(sel)
+            && let Ok(uuid) = Uuid::parse_str(&sel.terminal_key)
+        {
+            return Some(uuid);
+        }
         if let Some(item) = self
             .snapshot
             .items
@@ -293,17 +368,32 @@ impl AppState {
     }
 
     pub fn child_task_for(&self, terminal_key: &str) -> Option<&HerdTask> {
-        self.snapshot
-            .tasks
+        let pty_alias = self
+            .snapshot
+            .items
             .iter()
-            .find(|t| t.child_terminal_key.eq_ignore_ascii_case(terminal_key))
+            .find(|i| i.terminal_key.eq_ignore_ascii_case(terminal_key))
+            .and_then(|i| i.pty_id.as_deref());
+        self.snapshot.tasks.iter().find(|t| {
+            t.child_terminal_key.eq_ignore_ascii_case(terminal_key)
+                || pty_alias.is_some_and(|p| t.child_terminal_key.eq_ignore_ascii_case(p))
+        })
     }
 
     pub fn parent_tasks_for(&self, terminal_key: &str) -> Vec<&HerdTask> {
+        let pty_alias = self
+            .snapshot
+            .items
+            .iter()
+            .find(|i| i.terminal_key.eq_ignore_ascii_case(terminal_key))
+            .and_then(|i| i.pty_id.as_deref());
         self.snapshot
             .tasks
             .iter()
-            .filter(|t| t.parent_terminal_key.eq_ignore_ascii_case(terminal_key))
+            .filter(|t| {
+                t.parent_terminal_key.eq_ignore_ascii_case(terminal_key)
+                    || pty_alias.is_some_and(|p| t.parent_terminal_key.eq_ignore_ascii_case(p))
+            })
             .collect()
     }
 
@@ -311,13 +401,10 @@ impl AppState {
         let Some(task) = self.child_task_for(&item.terminal_key) else {
             return false;
         };
-        !task
-            .parent_terminal_key
-            .eq_ignore_ascii_case(&item.terminal_key)
-            && visible.iter().any(|(_, p)| {
-                p.terminal_key
-                    .eq_ignore_ascii_case(&task.parent_terminal_key)
-            })
+        !item.matches_key(&task.parent_terminal_key)
+            && visible
+                .iter()
+                .any(|(_, p)| p.matches_key(&task.parent_terminal_key))
     }
 
     pub fn attached_children_of<'a>(
@@ -325,6 +412,12 @@ impl AppState {
         parent_key: &str,
         visible: &[(usize, &'a FleetItem)],
     ) -> Vec<(usize, &'a FleetItem)> {
+        let parent_pty = self
+            .snapshot
+            .items
+            .iter()
+            .find(|i| i.terminal_key.eq_ignore_ascii_case(parent_key))
+            .and_then(|i| i.pty_id.as_deref());
         visible
             .iter()
             .copied()
@@ -332,7 +425,11 @@ impl AppState {
                 !candidate.terminal_key.eq_ignore_ascii_case(parent_key)
                     && self
                         .child_task_for(&candidate.terminal_key)
-                        .is_some_and(|t| t.parent_terminal_key.eq_ignore_ascii_case(parent_key))
+                        .is_some_and(|t| {
+                            t.parent_terminal_key.eq_ignore_ascii_case(parent_key)
+                                || parent_pty
+                                    .is_some_and(|p| t.parent_terminal_key.eq_ignore_ascii_case(p))
+                        })
             })
             .collect()
     }
@@ -487,7 +584,7 @@ impl AppState {
             return;
         }
         if let Some(ref key) = self.selected_key
-            && let Some((idx, _)) = visible.iter().find(|(_, item)| &item.terminal_key == key)
+            && let Some((idx, _)) = visible.iter().find(|(_, item)| item.matches_key(key))
         {
             self.selected_index = *idx;
             return;
@@ -629,7 +726,7 @@ impl AppState {
             self.set_toast("Select a parent terminal first to pair a child agent", true);
             return;
         };
-        let parent_key = item.terminal_key.clone();
+        let parent_key = item.binding_key().to_owned();
         let parent_agent = item.agent;
         let cwd = item.cwd.clone();
         let rec = herd::recommended_child_agent(parent_agent);
@@ -1019,7 +1116,7 @@ impl AppState {
             }
             KeyEvent::Char('r') => {
                 if let Some(item) = self.selected_item() {
-                    return UiEffect::Retry(Some(item.terminal_key.clone()));
+                    return UiEffect::Retry(Some(item.binding_key().to_owned()));
                 }
             }
             KeyEvent::Char('R') => {
@@ -1054,15 +1151,83 @@ impl AppState {
                     self.set_toast("Selected terminal has no saved resume command", true);
                 }
             }
+            KeyEvent::Char('-' | 'z') => {
+                if self.selected_item().is_some() {
+                    return UiEffect::HideSession(self.selected_index);
+                }
+            }
+            KeyEvent::Char('x') => {
+                if self.selected_item().is_some() {
+                    return UiEffect::CloseSession(self.selected_index);
+                }
+            }
+            KeyEvent::Char('J') => {
+                return self.swap_with_neighbor(1, width);
+            }
+            KeyEvent::Char('K') => {
+                return self.swap_with_neighbor(-1, width);
+            }
+            KeyEvent::Char('m') => {
+                let next = self.grid_layout.next();
+                self.grid_layout = next;
+                return UiEffect::ApplyGridLayout(next);
+            }
             _ => {}
         }
         UiEffect::None
+    }
+
+    fn swap_with_neighbor(&mut self, delta: isize, width: u16) -> UiEffect {
+        let ordered = self.visual_order(width);
+        if ordered.len() < 2 {
+            return UiEffect::None;
+        }
+        let current_pos = ordered
+            .iter()
+            .position(|&i| i == self.selected_index)
+            .unwrap_or(0);
+        let len = ordered.len() as isize;
+        let neighbor_pos = (current_pos as isize + delta).rem_euclid(len) as usize;
+        let src = self.selected_index;
+        let dst = ordered[neighbor_pos];
+        if src == dst {
+            return UiEffect::None;
+        }
+        UiEffect::SwapSessions(src, dst)
     }
 
     pub fn handle_mouse(&mut self, ev: MouseEvent, canvas: &Canvas) -> UiEffect {
         match ev.kind {
             MouseKind::Move => {
                 self.hover_pos = Some((ev.col, ev.row));
+                UiEffect::None
+            }
+            MouseKind::Drag => {
+                self.hover_pos = Some((ev.col, ev.row));
+                if let Some(src) = self.drag_source
+                    && let Some(HitTarget::SelectCard(dst) | HitTarget::FocusCard(dst)) =
+                        canvas.hit_at(ev.col, ev.row)
+                    && *dst != src
+                {
+                    self.drag_active = true;
+                }
+                UiEffect::None
+            }
+            MouseKind::LeftUp => {
+                self.hover_pos = Some((ev.col, ev.row));
+                let src = self.drag_source.take();
+                let was_dragging = std::mem::replace(&mut self.drag_active, false);
+                if was_dragging
+                    && let Some(src_idx) = src
+                    && let Some(HitTarget::SelectCard(dst_idx) | HitTarget::FocusCard(dst_idx)) =
+                        canvas.hit_at(ev.col, ev.row)
+                    && *dst_idx != src_idx
+                {
+                    let dst = *dst_idx;
+                    self.selected_index = dst;
+                    self.sync_selected_key();
+                    return UiEffect::SwapSessions(src_idx, dst);
+                }
                 UiEffect::None
             }
             MouseKind::ScrollUp => {
@@ -1076,8 +1241,17 @@ impl AppState {
             MouseKind::LeftDown => {
                 self.hover_pos = Some((ev.col, ev.row));
                 let Some(hit) = canvas.hit_at(ev.col, ev.row).cloned() else {
+                    self.drag_source = None;
+                    self.drag_active = false;
                     return UiEffect::None;
                 };
+                if let HitTarget::SelectCard(idx) = hit {
+                    self.drag_source = Some(idx);
+                    self.drag_active = false;
+                } else {
+                    self.drag_source = None;
+                    self.drag_active = false;
+                }
                 self.apply_hit(hit)
             }
         }
@@ -1101,6 +1275,25 @@ impl AppState {
                 self.selected_index = idx;
                 self.sync_selected_key();
                 self.focus_or_resume_item(idx)
+            }
+            HitTarget::HideCard(idx) => {
+                self.selected_index = idx;
+                self.sync_selected_key();
+                UiEffect::HideSession(idx)
+            }
+            HitTarget::CloseCard(idx) => {
+                self.selected_index = idx;
+                self.sync_selected_key();
+                UiEffect::CloseSession(idx)
+            }
+            HitTarget::ApplyGrid(layout) => {
+                self.grid_layout = layout;
+                UiEffect::ApplyGridLayout(layout)
+            }
+            HitTarget::CycleGrid => {
+                let next = self.grid_layout.next();
+                self.grid_layout = next;
+                UiEffect::ApplyGridLayout(next)
             }
             HitTarget::SetView(v) => {
                 self.auto_sidebar = false;
@@ -1166,7 +1359,7 @@ impl AppState {
             }
             HitTarget::TriggerRetrySelected => {
                 if let Some(item) = self.selected_item() {
-                    return UiEffect::Retry(Some(item.terminal_key.clone()));
+                    return UiEffect::Retry(Some(item.binding_key().to_owned()));
                 }
                 UiEffect::None
             }
@@ -1225,6 +1418,15 @@ impl AppState {
         let Some(item) = self.snapshot.items.get(idx) else {
             return UiEffect::None;
         };
+        if item.is_hidden
+            && let Some(ref pty_id) = item.pty_id
+        {
+            return UiEffect::AttachHiddenPty {
+                pty_id: pty_id.clone(),
+                cwd: item.cwd.clone(),
+                title: item.title.clone(),
+            };
+        }
         if item.window_index.is_some()
             && let Ok(uuid) = Uuid::parse_str(&item.terminal_key)
         {

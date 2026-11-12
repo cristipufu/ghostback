@@ -1,5 +1,6 @@
 use crate::applescript::{
-    FOCUS_FROM_SIDEBAR_SCRIPT, FOCUS_SCRIPT, SPAWN_FROM_SIDEBAR_SCRIPT, SPAWN_SCRIPT, TITLE_SCRIPT,
+    APPLY_GRID_SCRIPT, CLOSE_TERMINAL_SCRIPT, FOCUS_FROM_SIDEBAR_SCRIPT, FOCUS_SCRIPT,
+    SPAWN_FROM_SIDEBAR_SCRIPT, SPAWN_SCRIPT, TITLE_SCRIPT,
 };
 use crate::{Result, invalid, process};
 use serde::{Deserialize, Serialize};
@@ -116,7 +117,21 @@ pub fn match_terminal(rows: &[Terminal], tty: &str) -> Result<Uuid> {
     }
 }
 
+fn verified_pty_terminal_key() -> Option<String> {
+    let pty_id = std::env::var("GHOSTBACK_PTY_ID").ok()?;
+    let hint = std::env::var("GHOSTBACK_TERMINAL_KEY").ok()?;
+    let host = std::env::var("GHOSTBACK_HOST_KEY").ok()?;
+    if pty_id.is_empty() || !pty_id.eq_ignore_ascii_case(&hint) || host.is_empty() {
+        return None;
+    }
+    let uuid = Uuid::parse_str(&hint).ok()?;
+    crate::native::has_ancestor_key(std::process::id(), &host).then(|| uuid.to_string())
+}
+
 pub fn current_terminal_key() -> Result<String> {
+    if let Some(key) = verified_pty_terminal_key() {
+        return Ok(key);
+    }
     if std::env::var_os("GHOSTTY_SURFACE_ID")
         .filter(|v| !v.is_empty())
         .is_none()
@@ -363,4 +378,79 @@ pub fn spawn_from_sidebar(
         Duration::from_secs(10),
     )?;
     Uuid::parse_str(out.trim()).map_err(|_| invalid("Ghostty did not return a valid terminal UUID"))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GridCellSpec {
+    pub cwd: PathBuf,
+    pub title: String,
+    pub command: String,
+}
+
+pub fn close_terminal(terminal_key: Uuid) -> Result<()> {
+    ensure_macos("surface close")?;
+    let id = terminal_key.to_string();
+    process::output(
+        "/usr/bin/osascript",
+        &["-e", CLOSE_TERMINAL_SCRIPT, "--", &id],
+        Duration::from_secs(10),
+    )?;
+    Ok(())
+}
+
+/// Replaces the right-hand workspace splits next to `sidebar_terminal` with an `rows × cols` grid (`1×1` up to `3×3`).
+pub fn apply_grid_layout(
+    sidebar_terminal: Option<Uuid>,
+    rows: u8,
+    cols: u8,
+    cells: &[GridCellSpec],
+) -> Result<Vec<Uuid>> {
+    if !(1..=3).contains(&rows) || !(1..=3).contains(&cols) {
+        return Err(invalid("grid dimensions must be between 1x1 and 3x3"));
+    }
+    let expected = usize::from(rows) * usize::from(cols);
+    if cells.len() != expected {
+        return Err(invalid(format!(
+            "grid layout {rows}x{cols} requires {expected} cell specs, got {}",
+            cells.len()
+        )));
+    }
+    for cell in cells {
+        validate_cwd(&cell.cwd)?;
+        validate_command(Some(&cell.command))?;
+        if cell.title.len() > 256 || cell.title.chars().any(char::is_control) {
+            return Err(invalid("grid cell title contains invalid characters"));
+        }
+    }
+    ensure_macos("grid layout")?;
+    let side_id = sidebar_terminal
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    let rows_str = rows.to_string();
+    let cols_str = cols.to_string();
+    let mut owned_args = vec![
+        "-e".to_owned(),
+        APPLY_GRID_SCRIPT.to_owned(),
+        "--".to_owned(),
+        side_id,
+        rows_str,
+        cols_str,
+    ];
+    for cell in cells {
+        owned_args.push(cell.cwd.to_string_lossy().into_owned());
+        owned_args.push(cell.title.clone());
+        owned_args.push(cell.command.clone());
+    }
+    let arg_refs: Vec<&str> = owned_args.iter().map(String::as_str).collect();
+    let out = process::output("/usr/bin/osascript", &arg_refs, Duration::from_secs(20))?;
+    let mut created = Vec::new();
+    for line in out.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty()
+            && let Ok(uuid) = Uuid::parse_str(trimmed)
+        {
+            created.push(uuid);
+        }
+    }
+    Ok(created)
 }
